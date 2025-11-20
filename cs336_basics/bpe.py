@@ -1,8 +1,10 @@
 # bpe.py
 # byte-pair tokenizer
 
+from collections.abc import Iterable
 import os
-from typing import Optional
+import json
+from typing import Iterator, Optional
 import regex as re
 
 type Pretoken = tuple[bytes, ...]
@@ -20,10 +22,7 @@ def pretoken_byte_pair_counts(pretoken: tuple[bytes, ...]) -> BytePairCounts:
 
     return counts
 
-def merge_byte_pair(
-    pretoken: Pretoken,
-    byte_pair: BytePair, 
-) -> tuple[Pretoken, BytePairCounts]:
+def merge_byte_pair(pretoken: Pretoken, byte_pair: BytePair) -> Pretoken:
     new_pretoken_bytes: list[bytes] = []
     counts: BytePairCounts = dict()
 
@@ -39,16 +38,11 @@ def merge_byte_pair(
             new_pretoken_bytes.append(pretoken[i])
             i += 1
 
-        # if len(new_pretoken_bytes) >= 2:
-        #     byte_pair = (new_pretoken_bytes[-2], new_pretoken_bytes[-1])
-        #     if byte_pair in byte_pair_counts:
-        #         byte_pair_counts[byte_pair] += 1
-
-        #     else:
-        #         byte_pair_counts[byte_pair] = 1
-
     new_pretoken = tuple(new_pretoken_bytes)
-    return new_pretoken, dict()
+    return new_pretoken
+
+def to_pretoken(bs: bytes) -> Pretoken:
+    return tuple(b.to_bytes(1) for b in bs)
 
 def pretokenize(file_text: bytes, special_tokens: list[str]) -> dict[Pretoken, int]:
     special_tokens_pattern: re.Pattern[bytes] = re.compile("|".join(map(re.escape, special_tokens)).encode("utf-8"))
@@ -60,7 +54,7 @@ def pretokenize(file_text: bytes, special_tokens: list[str]) -> dict[Pretoken, i
     pretoken_pat: re.Pattern[bytes] = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""".encode("utf-8"))
     for text in text_list:
         for pretoken_match in re.finditer(pretoken_pat, text):
-            pretoken: tuple[bytes, ...] = tuple(b.to_bytes(1) for b in pretoken_match[0])
+            pretoken: Pretoken = to_pretoken(pretoken_match[0])
 
             if pretoken not in pretoken_counts:
                 pretoken_counts[pretoken] = 1
@@ -70,7 +64,7 @@ def pretokenize(file_text: bytes, special_tokens: list[str]) -> dict[Pretoken, i
 
     return pretoken_counts
 
-def bpe(
+def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str],
@@ -153,7 +147,7 @@ def bpe(
             # update the current version of the pretoken so that
             # current byte-pair is merged
             cur_pretoken = pretoken_versions[pretoken]
-            new_pretoken, _ = merge_byte_pair(cur_pretoken, max_byte_pair)
+            new_pretoken = merge_byte_pair(cur_pretoken, max_byte_pair)
 
             pretoken_count = pretoken_counts[pretoken]
             pretoken_versions[pretoken] = new_pretoken
@@ -184,3 +178,97 @@ def bpe(
         next_vocab_item += 1
 
     return vocab, merges
+
+class Tokenizer:
+    def __init__(self, vocab: dict[int, bytes], merges: list[BytePair], special_tokens: list[str] | None=None):
+        self.vocab: dict[int, bytes] = vocab
+        self.merges: list[BytePair] = merges
+        self.special_tokens: list[str] = special_tokens if special_tokens is not None else []
+        self.vocab_index = { v: i for i, v in self.vocab.items() }
+
+        self.secondary_special_tokens = \
+            [t1 for t1 in self.special_tokens for t2 in self.special_tokens if t1 != t2 and t1 in t2]
+
+        if len(self.secondary_special_tokens) > 0:
+            secondary_special_tokens_pattern_str = "(" + "|".join(map(re.escape, self.secondary_special_tokens)) + ")"
+            self.secondary_special_tokens_pattern: re.Pattern[bytes] = \
+                re.compile(secondary_special_tokens_pattern_str.encode("utf-8"))
+
+        self.primary_special_tokens = \
+            [t for t in self.special_tokens if t not in self.secondary_special_tokens]
+
+        if len(self.primary_special_tokens) > 0:
+            primary_special_tokens_pattern_str = "(" + "|".join(map(re.escape, self.primary_special_tokens)) + ")"
+            self.primary_special_tokens_pattern: re.Pattern[bytes] = \
+                re.compile(primary_special_tokens_pattern_str.encode("utf-8"))
+
+    def from_files(_cls, vocab_filepath, merges_filepath, special_tokens=None):
+        vocab: dict[int, bytes] = dict()
+        with open(vocab_filepath, "r") as f:
+            vocab_index: dict[bytes, int] = json.load(f)
+            for token, index in vocab_index.items():
+                vocab[index] = token
+
+        merges: list[tuple[bytes,bytes]] = []
+        with open(merges_filepath) as f:
+            for lines in f:
+                line_bytes: bytes = lines.encode("utf-8")
+                first_token: bytes = b''
+                for b in line_bytes:
+                    if first_token in vocab_index:
+                        break
+
+                    first_token += b.to_bytes(1)
+
+                second_token = line_bytes[len(first_token):]
+                merges.append((first_token, second_token))
+                        
+        return Tokenizer(vocab, merges, special_tokens)
+
+
+    def encode(self, text: str) -> list[int]:
+        if len(self.primary_special_tokens) > 0:
+            text_list: list[bytes] = re.split(self.primary_special_tokens_pattern, text.encode("utf-8"))
+
+        else:
+            text_list: list[bytes] = [text.encode("utf-8")]
+
+        # next, pre-tokenize text
+        # this is the regex used in GPT-2
+        tokens = []
+        pretoken_pat: re.Pattern[bytes] = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""".encode("utf-8"))
+        for pretoken_bytes in text_list:
+            # if pretoken_bytes is in the vocab index, it's a special token
+            if pretoken_bytes.decode("utf-8", errors="replace") in self.primary_special_tokens:
+                tokens.append(self.vocab_index[pretoken_bytes])
+                continue
+
+            if len(self.secondary_special_tokens) > 0:
+                secondary_list = re.split(self.secondary_special_tokens_pattern, pretoken_bytes)           
+
+            else:
+                secondary_list = [pretoken_bytes]
+
+            for secondary_pretoken in secondary_list:
+                if secondary_pretoken.decode("utf-8", errors="replace") in self.secondary_special_tokens:
+                    tokens.append(self.vocab_index[secondary_pretoken])
+                    continue
+
+                for pretoken_match in re.finditer(pretoken_pat, secondary_pretoken):
+                    pretoken: Pretoken = to_pretoken(pretoken_match[0])
+
+                    for byte_pair in self.merges:
+                        pretoken = merge_byte_pair(pretoken, byte_pair)
+
+                    tokens.extend(self.vocab_index[bs] for bs in pretoken)
+
+        return tokens
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        for text in iterable:
+            for token in self.encode(text):
+                yield token
+
+    def decode(self, ids: list[int]) -> str:
+        bs: bytes = b''.join(self.vocab[id] for id in ids)
+        return bs.decode("utf-8", errors="replace")
