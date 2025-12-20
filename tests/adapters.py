@@ -10,6 +10,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics.bpe import train_bpe, Tokenizer
+from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RoPE
 
 def run_linear(
     d_in: int,
@@ -30,8 +31,9 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
-
+    linear = Linear(d_in, d_out)
+    linear.load_state_dict({ "weights": weights })
+    return linear(in_features)
 
 def run_embedding(
     vocab_size: int,
@@ -52,8 +54,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
-
+    embedding = Embedding(vocab_size, d_model)
+    embedding.load_state_dict({ "weights": weights })
+    return embedding(token_ids)
 
 def run_swiglu(
     d_model: int,
@@ -84,8 +87,10 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
 
+    swiglu = SwiGLU(d_model, d_ff)
+    swiglu.load_state_dict({ "w1": w1_weight, "w2": w2_weight, "w3": w3_weight })
+    return swiglu(in_features)
 
 def run_scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],
@@ -201,8 +206,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
-
+    rope = RoPE(theta, d_k, max_seq_len)
+    return rope(in_query_or_key, token_positions)
 
 def run_transformer_block(
     d_model: int,
@@ -379,8 +384,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
-
+    rms_norm = RMSNorm(d_model, eps)
+    rms_norm.load_state_dict({ "weights": weights })
+    return rms_norm(in_features)
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     """Given a tensor of inputs, return the output of applying SiLU
