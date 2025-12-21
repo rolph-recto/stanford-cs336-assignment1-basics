@@ -210,3 +210,10 @@ class RoPE(torch.nn.Module):
             result_batched,
             '... seq_len k h -> ... seq_len (k h)'
         )
+
+def softmax(x: torch.Tensor, d: int) -> torch.Tensor:
+    d_max = x.amax(d, keepdim=True)
+    x2: torch.Tensor = x - d_max
+    x2_exp: torch.Tensor = x2.exp()
+    total: torch.Tensor = x2_exp.sum(dim=d, keepdim=True)
+    return x2_exp / total
