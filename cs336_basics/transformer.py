@@ -217,3 +217,33 @@ def softmax(x: torch.Tensor, d: int) -> torch.Tensor:
     x2_exp: torch.Tensor = x2.exp()
     total: torch.Tensor = x2_exp.sum(dim=d, keepdim=True)
     return x2_exp / total
+
+# Q: (... seq d_k)
+# K: (... seq d_k)
+# V: (... seq d_v)
+# mask: (... seq ks)
+# output: (... seq d_v)
+def scaled_dot_product_attention(
+    Q: torch.Tensor,
+    K: torch.Tensor,
+    V: torch.Tensor,
+    mask: torch.Tensor | None
+):
+    d_k: int = K.size(-1)
+    qk: torch.Tensor = \
+        einops.einsum(
+            Q, K,
+            '... qs d_k, ... ks d_k -> ... qs ks'
+        )
+
+    qk /= math.sqrt(d_k)
+
+    if mask is not None:
+        # is mask is false, that means we SHOULD fill with -inf
+        qk.masked_fill_(mask == False, -torch.inf) 
+
+    score: torch.Tensor = softmax(qk, -1)
+    return einops.einsum(
+        score, V,
+        '... qs ks, ... ks d_v -> ... qs d_v'
+    )
