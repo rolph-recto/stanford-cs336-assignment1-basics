@@ -44,7 +44,7 @@ class Embedding(torch.nn.Module):
 
         embedding_weights: torch.Tensor = \
             torch.nn.init.trunc_normal_(
-                torch.empty(vocab_size, d_model),
+                torch.empty(vocab_size, d_model, device=device, dtype=dtype),
                 mean = 0.0,
                 std = 1.0,
                 a = -3.0,
@@ -57,7 +57,7 @@ class Embedding(torch.nn.Module):
         batch_size: int = token_ids.size(0)
         seq_length: int = token_ids.size(1)
         return einops.rearrange(
-            self.weights.index_select(0, token_ids.view(-1)),
+            self.weights.index_select(0, token_ids.reshape(-1)),
             "... (batch_size seq_length) d_model -> ... batch_size seq_length d_model",
             batch_size=batch_size, seq_length=seq_length
         )
@@ -165,15 +165,16 @@ class RoPE(torch.nn.Module):
         theta: float,
         d_k: int,
         max_seq_len: int,
-        device: torch.device | None = None
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None
     ):
         super().__init__()
 
-        k_indices = torch.arange(0, d_k, 2, device=device).float()
+        k_indices = torch.arange(0, d_k, 2, device=device, dtype=dtype).float()
         freqs = 1.0 / (theta ** (k_indices / d_k))
         
         # 2. Compute the outer product of positions and frequencies
-        pos = torch.arange(max_seq_len, device=device).float()
+        pos = torch.arange(max_seq_len, device=device, dtype=dtype).float()
         angles = torch.outer(pos, freqs) # Shape: (max_seq_len, d_k // 2)
 
         # 3. Create the 2x2 rotation matrices
@@ -279,7 +280,7 @@ class CausalMultiHeadSelfAttention(torch.nn.Module):
 
         self.rope: torch.nn.Module | None = None
         if theta is not None and max_seq_len is not None:
-            self.rope = RoPE(theta, max_seq_len, self.d_e)
+            self.rope = RoPE(theta, self.d_e, max_seq_len, device=device, dtype=dtype)
 
     def forward(
         self,
@@ -317,3 +318,72 @@ class CausalMultiHeadSelfAttention(torch.nn.Module):
             self.WO, concat_heads,
             "d_model heads__d_e, ... seq heads__d_e -> ... seq d_model"
         )
+
+# Pre-norm causal multi-head self-attention block followed by a FFN layer
+# Note that this is the standard attention block today (2025),
+# but is different from Vaswani 2017, which has a "post-norm" attention block
+class PreNormTransformerBlock(torch.nn.Module):
+    def __init__(self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        max_seq_len: int | None = None,
+        theta: float | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+
+        self.prenorm_attn = RMSNorm(d_model, device=device, dtype=dtype)
+        self.attention = \
+            CausalMultiHeadSelfAttention(
+                d_model, num_heads,
+                max_seq_len=max_seq_len, theta=theta,
+                device=device, dtype=dtype
+            )
+
+        self.prenorm_ffn = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        seq_length: int = x.size(-2)
+        token_positions: torch.Tensor = \
+            torch.arange(seq_length).expand(x.shape[:-1])
+
+        x += self.attention(self.prenorm_attn(x), token_positions)
+        x += self.ffn(self.prenorm_ffn(x))
+        return x
+
+class Transformer(torch.nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        theta: float,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+
+        self.layers = torch.nn.ModuleList([
+            Embedding(vocab_size, d_model, device=device, dtype=dtype),
+            torch.nn.Sequential(*[
+                PreNormTransformerBlock(
+                    d_model, num_heads, d_ff,
+                    max_seq_len=context_length, theta=theta
+                ) for _ in range(num_layers)
+            ]),
+            RMSNorm(d_model),
+            Linear(d_model, vocab_size),
+        ])
+
+    # this returns raw logits, not normalized to a distribution by softmax
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x)
+
+        return x

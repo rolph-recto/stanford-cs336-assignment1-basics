@@ -10,7 +10,10 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics.bpe import train_bpe, Tokenizer
-from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention, CausalMultiHeadSelfAttention
+from cs336_basics.transformer import \
+    Linear, Embedding, RMSNorm, SwiGLU, RoPE, \
+    softmax, scaled_dot_product_attention, \
+    CausalMultiHeadSelfAttention, PreNormTransformerBlock, Transformer
 
 def run_linear(
     d_in: int,
@@ -292,8 +295,28 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    attn_WQKV: torch.Tensor = \
+        torch.cat([
+            weights["attn.q_proj.weight"],
+            weights["attn.k_proj.weight"],
+            weights["attn.v_proj.weight"],
+        ], dim=0)
 
+    block = \
+        PreNormTransformerBlock(
+            d_model, num_heads, d_ff,
+            max_seq_len=max_seq_len, theta=theta
+        )
+    block.load_state_dict({
+        "prenorm_attn.weights": weights["ln1.weight"],
+        "attention.WQKV": attn_WQKV,
+        "attention.WO": weights["attn.output_proj.weight"],
+        "prenorm_ffn.weights": weights["ln2.weight"],
+        "ffn.w1": weights["ffn.w1.weight"],
+        "ffn.w2": weights["ffn.w2.weight"],
+        "ffn.w3": weights["ffn.w3.weight"],
+    })
+    return block(in_features)
 
 def run_transformer_lm(
     vocab_size: int,
@@ -374,8 +397,36 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer = \
+        Transformer(
+            vocab_size, context_length,
+            d_model, num_layers, num_heads, d_ff, rope_theta)
 
+    state = {
+        "layers.0.weights": weights["token_embeddings.weight"],
+        "layers.2.weights": weights["ln_final.weight"],
+        "layers.3.weights": weights["lm_head.weight"],
+    }
+    for i in range(num_layers):
+        attn_WQKV: torch.Tensor = \
+            torch.cat([
+                weights[f"layers.{i}.attn.q_proj.weight"],
+                weights[f"layers.{i}.attn.k_proj.weight"],
+                weights[f"layers.{i}.attn.v_proj.weight"],
+            ], dim=0)
+
+        state.update({
+            f"layers.1.{i}.prenorm_attn.weights": weights[f"layers.{i}.ln1.weight"],
+            f"layers.1.{i}.attention.WQKV": attn_WQKV,
+            f"layers.1.{i}.attention.WO": weights[f"layers.{i}.attn.output_proj.weight"],
+            f"layers.1.{i}.prenorm_ffn.weights": weights[f"layers.{i}.ln2.weight"],
+            f"layers.1.{i}.ffn.w1": weights[f"layers.{i}.ffn.w1.weight"],
+            f"layers.1.{i}.ffn.w2": weights[f"layers.{i}.ffn.w2.weight"],
+            f"layers.1.{i}.ffn.w3": weights[f"layers.{i}.ffn.w3.weight"],
+        })
+
+    transformer.load_state_dict(state)
+    return transformer(in_indices)
 
 def run_rmsnorm(
     d_model: int,
