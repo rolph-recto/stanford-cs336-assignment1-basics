@@ -227,7 +227,7 @@ def scaled_dot_product_attention(
     Q: torch.Tensor,
     K: torch.Tensor,
     V: torch.Tensor,
-    mask: torch.Tensor | None
+    mask: torch.Tensor | None = None
 ):
     d_k: int = K.size(-1)
     qk: torch.Tensor = \
@@ -247,3 +247,73 @@ def scaled_dot_product_attention(
         score, V,
         '... qs ks, ... ks d_v -> ... qs d_v'
     )
+
+class CausalMultiHeadSelfAttention(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        max_seq_len: int | None = None, # for RoPE
+        theta: float | None = None, # for RoPE
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+
+        self.heads: int = num_heads 
+        self.d_e: int = d_model // num_heads
+
+        # concat WQ, WK, and WV together so forward pass is efficient
+        std: float = math.sqrt(2 / (self.heads * self.d_e + d_model))
+        weights = torch.nn.init.trunc_normal_(
+            torch.empty(3 * num_heads * self.d_e, d_model, device=device, dtype=dtype, requires_grad=True),
+            mean = 0, std = std, a = -3.0 * std, b = 3.0 * std
+        )
+        self.WQKV: torch.Tensor = torch.nn.Parameter(data=weights, requires_grad=True)
+
+        self.WO = \
+            torch.nn.Parameter(data=torch.nn.init.trunc_normal_(
+                torch.empty(d_model, num_heads * self.d_e, device=device, dtype=dtype, requires_grad=True),
+                mean = 0, std = std, a = -3.0 * std, b = 3.0 * std
+            ))
+
+        self.rope: torch.nn.Module | None = None
+        if theta is not None and max_seq_len is not None:
+            self.rope = RoPE(theta, max_seq_len, self.d_e)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        token_positions: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        seq_length: int = x.size(-2)
+
+        # batch the Q, K, V linear layers computations together for efficiency
+        QKV: torch.Tensor = einops.einsum(
+            self.WQKV, x,
+            'qkv__heads__d_e d_model, ... seq d_model -> ... seq qkv__heads__d_e',
+        )
+
+        Q, K, V = \
+            einops.rearrange(
+                QKV,
+                '... seq (qkv heads d_e) -> qkv ... heads seq d_e',
+                qkv=3, heads=self.heads
+            )
+
+        if self.rope is not None:
+            assert token_positions is not None
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
+        
+        seq_range = torch.arange(seq_length)
+        causal_mask: torch.Tensor = seq_range.unsqueeze(0) <= seq_range.unsqueeze(1)
+
+        # heads: (... heads seq d_e)
+        heads = scaled_dot_product_attention(Q, K, V, mask=causal_mask)
+        concat_heads = einops.rearrange(heads, '... heads seq d_e -> ... seq (heads d_e)')
+
+        return einops.einsum(
+            self.WO, concat_heads,
+            "d_model heads__d_e, ... seq heads__d_e -> ... seq d_model"
+        )

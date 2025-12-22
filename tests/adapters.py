@@ -10,7 +10,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics.bpe import train_bpe, Tokenizer
-from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention
+from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention, CausalMultiHeadSelfAttention
 
 def run_linear(
     d_in: int,
@@ -144,8 +144,14 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    WQKV: torch.Tensor = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
 
+    mha = CausalMultiHeadSelfAttention(d_model, num_heads)
+    mha.load_state_dict({
+        "WQKV": WQKV,
+        "WO": o_proj_weight
+    })
+    return mha(in_features)
 
 def run_multihead_self_attention_with_rope(
     d_model: int,
@@ -184,7 +190,14 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    WQKV: torch.Tensor = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
+
+    mha = CausalMultiHeadSelfAttention(d_model, num_heads, max_seq_len=max_seq_len, theta=theta)
+    mha.load_state_dict({
+        "WQKV": WQKV,
+        "WO": o_proj_weight
+    })
+    return mha(in_features, token_positions)
 
 
 def run_rope(
