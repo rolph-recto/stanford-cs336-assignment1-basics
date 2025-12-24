@@ -387,3 +387,34 @@ class Transformer(torch.nn.Module):
             x = layer(x)
 
         return x
+
+# -ln(e^x / sum_i(e^{x_i}))
+# = ln(sum_i(e^{x_i})) - ln(e^x)
+# = ln(sum_i(e^{x_i})) - x
+#
+# notice that
+# ln(sum_i(e^{x_i}))
+# = ln(e^max * sum_i(e^{x_i - max}))
+# = ln(e^max) + ln(sum_i(e^{x_i - max}))
+# = max + ln(sum_i(e^{x_i - max}))
+#
+# Thus we can calculate cross-entropy as:
+# max + ln(sum_i(e^{x_i - max})) - x
+#
+# We can note the following:
+# * For all x_i, x_i - max <= 0, and thus e^{x_i - max} <= 1,
+#   which prevents overflow. If we did not do this, e^{x_i} for arbitrary x_i
+#   can cause _overflow_; e.g. e^1000 would overflow a single-precision float
+#
+# * If e^{x_i - max} is close to zero, e^{x_i - max} would be clipped to 0,
+#   and then ln(0) = inf because of _underflow_. But ln(sum_i(e^{x_i - max}))
+#   would _not_ underflow, because one of the summands is e^{max - max} = 1,
+#   and thus sum_i(e^{x_i - max}) >= 1, and thus ln(sum_i(e^{x_i - max}))
+#   cannot underflow.
+def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    batch_size: int = logits.size(0)
+    target_values = logits[torch.arange(batch_size),targets]
+    logits_max = logits.amax(-1)
+    log_sum_exp = torch.exp(logits - logits_max.unsqueeze(-1)).sum(-1).log() + logits_max
+
+    return torch.mean(log_sum_exp - target_values)
