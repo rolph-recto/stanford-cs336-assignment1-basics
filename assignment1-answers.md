@@ -100,3 +100,309 @@ Steps to BPE tokenizer training
 
    - Should handle special tokens (e.g. `<|endoftext>`) and preserve them as
      single tokens.
+
+# 3.6 - The Full Transformer LM
+
+## Counting Required FLOPS for Transformer Model's Forward Pass
+
+Matrix multiples dominate the computational requirements of a transformer model,
+so we only need to count matmuls to estimate how many FLOPS are required to do
+a forward pass.
+
+Rule of thumb: matrix multiply between AxB and BxC matrices takes 2ABC FLOPS.
+
+Computation per layer:
+
+**Transformer Block (Multihead Self-Attention + SwiGLU FFN)**
+
+(Remember: d_embed = d_model / heads)
+
+1. Q,K,V Projection from d_model to d_embed:
+
+- matrix 1: seq x d_model
+- matrix 2 (WQKV): d_model x (3 * heads * d_embed)
+- FLOPs: batch * 2 * seq * d_model 3 * heads * d_embed
+       = batch * 6 * seq * d_model * heads * d_embed
+       = batch * 6 * seq * d_model^2
+
+2. RoPE for Q and K vectors:
+
+- matrix 1: (2 * batch * seq * heads * d_embed/2) x 2
+- matrix 2: 2 x 2
+- output: (batch * seq * heads * d_embed/2) x 2
+- FLOPS: 4 * batch * seq * heads * d_embed/2 * 2 * 2
+       = 8 * batch * seq * d_model
+
+3. Scaled Dot-Product Attention with Causal Mask:
+
+3.1. Scaled Attention Score (softmax(QK^T / sqrt(d_embed)))
+
+- matrix 1 (Q): seq x d_embed
+- matrix 2 (K): d_embed x seq
+- output: seq x seq
+- FLOPS: batch * heads * 2 * seq^2 * d_embed
+       = 2 * batch * seq^2 * d_model
+
+3.2. Compute Attention-Value Product:
+
+- matrix 1: seq x seq
+- matrix 2: seq x d_embed
+- output: seq * d_embed
+- FLOPS: batch * heads * 2 * seq * seq * d_embed
+       = 2 * batch * seq^2 * d_model
+
+3.3. Total for Multihead Self-Attention:
+
+2 * 2 * batch * seq^2 * d_model
+= 4 * batch * seq^2 * d_model
+
+4. Output Projection to d_model:
+
+- matrix 1: seq x (heads * d_embed)
+- matrix 2 (WO): (heads * d_embed) x d_model
+- FLOPs: batch * 2 * seq * heads * d_embed * d_model
+       = 2 * batch * seq * d_model^2
+
+5. SwiGLU FFN
+
+SwiGLU FFN is W2 * (HadamardProduct(SiLU(W1 * x), W3 * x)
+
+5.1. W1 * x
+- matrix 1 (x): (batch * seq) x d_model
+- matrix 2 (W1): d_model x d_ff
+- output: (batch * seq) x d_ff
+- FLOPS: 2 * batch * seq * d_model * d_ff
+
+5.2. W3 * x
+
+Same accounting as W1 * x.
+
+5.3. W2 * (HadamardProduct(SiLU(W1 * x), W3 * x)
+
+- matrix 1: (batch * seq) x d_ff
+- matrix 2 (W2): d_ff x d_model
+- output: (batch * seq) x d_model
+- FLOPS: 2 * batch * seq * d_ff * d_model
+
+5.4 Total for SwiGLU FFN:
+3 * (2 * batch * seq * d_ff * d_model)
+= 6 * batch * seq * d_ff * d_model
+
+Assuming d_ff = 8/3 * d_model:
+6 * batch * seq * d_ff * d_model
+= 16/3 * batch * seq * d_model^2
+
+Total for Transformer Block:
+
+- QKV projection from d_model to d_embed: batch * 6 * seq * d_model^2
+- Q,K RoPE: 8 * batch * seq * d_model
+- Multihead Self-Attention: 4 * batch * seq^2 * d_model
+- Output Projection to d_model: 2 * batch * seq * d_model^2
+- SwiGLU FFN: 6 * batch * seq * d_ff * d_model
+
+2 * batch * seq * d_model * ((3 * d_model) + 4 + (2 * seq) + d_model + (3 * d_ff))
+= 2 * batch * seq * d_model * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)
+
+**Output Projection to Vocab**
+
+- matrix 1: (batch * seq) x d_model
+- matrix 2: d_model x vocab_size
+- output: (batch * seq) x vocab_size
+- FLOPS: 2 * batch * seq * d_model * vocab_size
+
+**Total FLOPS**
+
+layers * 2 * batch * seq * d_model * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)
++ 2 * batch * seq * d_model * vocab_size
+=
+2 * batch * seq * d_model * (
+   (layers * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)) + vocab_size
+)
+
+## Number of Parameters for Transformer Model
+
+Embedding:
+- total params: vocab_size * d_model
+
+Transformer Block:
+- Multihead Self-Attention:
+   - WQKV: d_model x (3 * heads * d_embed)
+   - WO: (heads * d_embed) x d_model
+   - total params: 3 * d_model^2 + d_model^2 = 4 * d_model^2
+
+- SwiGLU FFN:
+   - W1, W2, W3: d_model x d_ff
+   - total params: 3 * d_model * d_ff
+
+- total params: d_model * (4 * d_model + 3 * d_ff)
+
+Output Projection:
+- total params: d_model x vocab_size
+
+Total params:
+vocab_size * d_model
++ layers * (d_model * (4 * d_model + 3 * d_ff))
++ d_model x vocab_size
+
+## Problems
+
+**Problem (transformer_accounting): Transformer Accounting**
+
+a. Consider GPT-2 XL, which has the following configuration:
+
+- vocab_size : 50,257
+- context_length : 1,024
+- num_layers : 48
+- d_model : 1,600
+- num_heads : 25
+- d_ff : 6,400
+
+Suppose we constructed our model using this configuration. How many trainable
+parameters would our model have? Assuming each parameter is represented using
+single-precision floating point, how much memory is required to just load this
+model?
+
+```
+number of params =
+vocab_size * d_model
++ layers * (d_model * (4 * d_model + 3 * d_ff))
++ d_model x vocab_size
+=
+50257 * 1600
++ 48 * (1600 * (4 * 1600 + 3 * 6400))
++ 1600 * 50257
+=
+2,126,902,400 params
+
+If each param is stored as 32-bit single precision:
+2126902400 * 4 bytes =
+8,507,609,600 bytes =
+8.508 GB
+```
+
+b. How many FLOPs do these matrix multiplies require in total?
+
+```
+2 * batch * seq * d_model * (
+   (layers * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)) + vocab_size
+)
+=
+2 * 1024 * 1600 * (
+   (48 * ((4 * 1600) + (2 * 1024) + (3 * 6400) + 4)) + 50257
+)
+=
+4,513,965,670,400 FLOPS
+~4.5 TFLOPS
+```
+
+c. Based on your analysis above, which parts of the model require the most FLOPs?
+
+- The SwiGLU FFN components of transformer layers. See:
+
+SwiGLU FFN FLOPS:
+```
+layers * 6 * batch * seq * d_ff * d_model
+=
+48 * 6 * 1024 * 6400 * 1600
+=
+3,019,898,880,000
+~3,020 GFLOPS
+```
+
+Attention FLOPS (no RoPE, embedding/output projection)
+```
+layers * 4 * batch * seq^2 * d_model
+=
+48 * 4 * 1024^2 * 1600
+=
+322,122,547,200
+~322 GFLOPS
+```
+
+d. Repeat your analysis with GPT-2 small (12 layers, 768 d_model, 12 heads),
+GPT-2 medium (24 layers, 1024 d_model, 16 heads), and GPT-2 large (36 layers,
+1280 d_model, 20 heads). As the model size increases, which parts of the
+Transformer LM take up proportionally more or less of the total FLOPs?
+
+GPT-2 small (12 layers, 768 d_model, 12 heads)
+```
+2 * batch * seq * d_model * (
+   (layers * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)) + vocab_size
+)
+=
+2 * 1 * 1024 * 768 * (
+   (12 * ((4 * 768) + (2 * 1024) + (3 * 6400) + 4)) + 50257
+)
+=
+538,147,553,280 FLOPs
+```
+
+GPT-2 medium (24 layers, 1024 d_model, 16 heads)
+```
+2 * batch * seq * d_model * (
+   (layers * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)) + vocab_size
+)
+=
+2 * 1 * 1024 * 1024 * (
+   (24 * ((4 * 1024) + (2 * 1024) + (3 * 6400) + 4)) + 50257
+)
+=
+1,381,203,181,568 FLOPs
+```
+
+GPT-2 large (36 layers, 1280 d_model, 20 heads)
+```
+2 * batch * seq * d_model * (
+   (layers * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)) + vocab_size
+)
+=
+2 * 1 * 1024 * 1280 * (
+   (36 * ((4 * 1280) + (2 * 1024) + (3 * 6400) + 4)) + 50257
+)
+=
+2,620,519,874,560 FLOPs
+```
+
+e. Take GPT-2 XL and increase the context length to 16,384. How does the total
+FLOPs for one forward pass change? How do the relative contribution of FLOPs of
+the model components change?
+
+```
+2 * batch * seq * d_model * (
+   (layers * ((4 * d_model) + (2 * seq) + (3 * d_ff) + 4)) + vocab_size
+)
+=
+2 * 16384 * 1600 * (
+   (48 * ((4 * 1600) + (2 * 16384) + (3 * 6400) + 4)) + 50257
+)
+=
+149,532,862,054,400 FLOPS
+~149.5 TFLOPS
+```
+
+The FLOPS required from 1,024 context size to 16,384 (16x increase)
+increased ~35x!
+
+SwiGLU FFN FLOPS:
+```
+layers * 6 * batch * seq * d_ff * d_model
+=
+48 * 6 * 1 * 16384 * 6400 * 1600
+=
+48,318,382,080,000
+~48,318 GFLOPS
+```
+
+Attention FLOPS (no RoPE, embedding/output projection)
+```
+layers * 4 * batch * seq^2 * d_model
+=
+48 * 4 * 1 * 16384^2 * 1600
+=
+82,463,372,083,200
+~82,463 GFLOPS
+```
+
+Attention now dominates the required FLOPs; required attention FLOPS increased
+by ~256x while required SwiGLU FFN FLOPs increased by ~16x. Thus as context
+size increases, attention becomes the computational bottleneck.
