@@ -1,3 +1,4 @@
+from typing import Callable
 import einops
 import math
 import torch
@@ -418,3 +419,46 @@ def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     log_sum_exp = torch.exp(logits - logits_max.unsqueeze(-1)).sum(-1).log() + logits_max
 
     return torch.mean(log_sum_exp - target_values)
+
+
+class AdamW(torch.optim.Optimizer):
+    def __init__(self, params, lr: float, weight_decay: float, betas: tuple[float, float], eps: float):
+        defaults = {
+            "lr": lr, "weight_decay": weight_decay, "betas": betas, "eps": eps
+        }
+        super().__init__(params, defaults)
+
+    def step(self, closure: Callable | None = None):
+        loss = None if closure is None else closure()
+        for group in self.param_groups:
+            lr = group["lr"]
+            b1, b2 = group["betas"][0], group["betas"][1]
+            eps, weight_decay = group["eps"], group["weight_decay"]
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+
+                p_state = self.state[p]
+                grad = p.grad.data
+
+                t: int = p_state.get("t", 1)
+                m: torch.Tensor = p_state.get("m", torch.zeros_like(p))
+                v: torch.Tensor = p_state.get("v", torch.zeros_like(p))
+
+                # do in-place updates on moment vectors m and v
+                # so we don't allocate too much memory
+                m.mul_(b1).add_(grad, alpha=(1 - b1))
+                v.mul_(b2).addcmul_(grad, grad, value=(1 - b2))
+
+                lr_t = lr * math.sqrt(1 - (b2 ** t)) / (1 - (b1 ** t))
+
+                p.data -= lr_t * m / (torch.sqrt(v) + eps)
+                p.data -= lr * weight_decay * p.data
+
+                p_state["m"] = m
+                p_state["v"] = v
+                p_state["t"] = t + 1
+
+        return loss
+    
