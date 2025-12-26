@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Iterable
 import einops
 import math
 import torch
@@ -489,3 +489,16 @@ def lr_cosine_schedule(
 
     else:
         assert False, f"invalid iteration number {t}"
+
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float, eps: float=.00001):
+    grads = [parameter.grad for parameter in parameters if parameter.grad is not None]
+    total_norm: float = 0.0
+    for grad in grads:
+        total_norm += (grad * grad).sum().item()
+
+    total_norm = math.sqrt(total_norm)
+
+    if total_norm >= max_l2_norm:
+        scale_factor: float = max_l2_norm / (total_norm + eps)
+        for grad in grads:
+            grad.mul_(scale_factor)
