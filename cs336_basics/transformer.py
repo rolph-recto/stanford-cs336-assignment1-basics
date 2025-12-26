@@ -1,7 +1,10 @@
+import numpy as np
+import numpy.typing as npt
 from typing import Callable, Iterable
 import einops
 import math
 import torch
+from random import randint
 
 class Linear(torch.nn.Module):
     def __init__(
@@ -502,3 +505,17 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
         scale_factor: float = max_l2_norm / (total_norm + eps)
         for grad in grads:
             grad.mul_(scale_factor)
+
+def get_batch(
+        dataset: npt.NDArray,
+        batch_size: int,
+        context_length: int,
+        device: str
+) -> tuple[torch.Tensor, torch.Tensor]:
+    torch_dataset: torch.Tensor = torch.from_numpy(dataset).to(device)
+
+    max_start: int = dataset.shape[0] - context_length
+    starts: torch.Tensor = torch.randint(0, max_start, (batch_size,), device=device)
+    increments: torch.Tensor = torch.arange(context_length, device=device)
+    indices: torch.Tensor = starts.unsqueeze(-1) + increments.unsqueeze(0)
+    return torch_dataset[indices], torch_dataset[indices + 1]
