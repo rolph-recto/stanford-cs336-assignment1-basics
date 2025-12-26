@@ -406,3 +406,143 @@ layers * 4 * batch * seq^2 * d_model
 Attention now dominates the required FLOPs; required attention FLOPS increased
 by ~256x while required SwiGLU FFN FLOPs increased by ~16x. Thus as context
 size increases, attention becomes the computational bottleneck.
+
+# 4.3. AdamW
+
+**Problem (adamwAccounting): AdamW Accounting**
+
+a. How much peak memory does running AdamW require? Decompose your answer based
+on the memory usage of the parameters, activations, gradients, and optimizer
+state. Express your answer in terms of the batch_size and the model
+hyperparameters (vocab_size, context_length, num_layers,d_model,num_heads).
+Assume `d_ff=4 x d_model`.
+
+Parameters:
+```
+vocab_size * d_model
++ layers * (d_model * (4 * d_model + 3 * d_ff))
++ d_model x vocab_size
+```
+
+Gradients: same as parameters!
+
+Optimizer state:
+2 * parameters (first moment + second moment for each parameter)
+
+Activations:
+Transformer block
+- RMSNorm(s): 2 * batch * seq * d_model
+   - 1 for before attention, 1 for before FFN
+
+– Multi-head self-attention
+   - QKV projections: 3 * batch * seq * heads * d_embed = 3 * batch * seq * d_model
+   - QK matrix multiply: batch * heads * seq * seq
+   - softmax: batch * heads * seq * seq
+   - weighted sum of values with V: batch * heads * seq * d_embed = batch * seq * d_model
+   - output projection: batch * seq * d_model
+   - total: 5 * batch * seq * d_model + 2 * batch * heads * seq * seq
+
+– Position-wise feed-forward:
+   - W1 matrix multiply: 4 * batch * seq * d_model
+   - W3 matrix multiply: 4 * batch * seq * d_model
+   - SiLU: 4 * batch * seq * d_model
+   - W2 matrix multiply: batch * seq * d_model
+   - total: 13 * batch * seq * d_model
+
+- Total for transformer block:
+    2 * batch * seq * d_model
+  + 5 * batch * seq * d_model + 2 * batch * heads * seq * seq
+  + 13 * batch * seq * d_model
+
+Final RMSNorm: batch * seq * d_model
+
+Output embedding: batch * seq * vocab_size
+
+Cross-entropy on logits: 1
+
+Total Activations:
+
+layers * (
+    2 * batch * seq * d_model
+  + 5 * batch * seq * d_model + 2 * batch * heads * seq * seq
+  + 13 * batch * seq * d_model
+)
++ batch * seq * d_model
++ batch * seq * vocab_size
+   
+Peak memory usage:
+
+- Peak usage is at the end of forward pass, before backward pass,
+when all of activations must be kept.
+
+- Total bytes used:
+
+```
+format size * (parameters + gradients + optimizer states + activations)
+=
+4 * (4 * parameters + activations)
+=
+4 * (4 * (
+   vocab_size * d_model
+   + layers * (d_model * (4 * d_model + 3 * d_ff))
+   + d_model x vocab_size
+)
++ layers * (
+    2 * batch * seq * d_model
+  + 5 * batch * seq * d_model + 2 * batch * heads * seq * seq
+  + 13 * batch * seq * d_model
+)
++ batch * seq * d_model
++ batch * seq * vocab_size)
+```
+
+b. Instantiate your answer for a GPT-2 XL-shaped model to get an expression that
+only depends on the batch_size. What is the maximum batch size you can use and
+still fit within 80GB memory?
+
+Assuming single-precision for all values (FP32):
+
+```
+4 * (4 * (
+   vocab_size * d_model
+   + layers * (d_model * (4 * d_model + 3 * d_ff))
+   + d_model x vocab_size
+)
++ layers * (
+    2 * batch * seq * d_model
+  + 5 * batch * seq * d_model + 2 * batch * heads * seq * seq
+  + 13 * batch * seq * d_model
+)
++ batch * seq * d_model
++ batch * seq * vocab_size)
+=
+4 * (4 * (
+   50257 * 1600
+   + 48 * (1600 * (4 * 1600 + 3 * 6400))
+   + 1600 x 50257
+)
++ 48 * (
+    2 * batch * 1024 * 1600
+  + 5 * batch * 1024 * 1600 + 2 * batch * 25 * 1024 * 1024
+  + 13 * batch * 1024 * 1600
+)
++ batch * 1024 * 1600
++ batch * 1024 * 50257)
+=
+4 * (8507609600 + 4142547968 * batch)
+=
+4 * (8507609600 + 4142547968 * batch)
+=
+16570191872 * batch + 34030438400
+```
+
+Batch size that can fit in 80GB?
+```
+16570191872 * batch + 34030438400 = 80000000000
+=
+16570191872 * batch = 45969561600
+~
+2.77
+```
+
+So a batch size of a most 2 can fit in 80GB.

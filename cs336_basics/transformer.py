@@ -462,3 +462,30 @@ class AdamW(torch.optim.Optimizer):
 
         return loss
     
+def lr_cosine_schedule(
+    t: int,
+    max_learning_rate: float,
+    min_learning_rate: float,
+    warmup_iters: int,
+    cosine_cycle_iters: int
+):
+    # warmup
+    if t < warmup_iters:
+        return t / float(warmup_iters) * max_learning_rate
+
+    # cosine annealing
+    elif warmup_iters <= t and t <= cosine_cycle_iters:
+        delta_learning_rate = max_learning_rate - min_learning_rate
+        warmup_dist = float(t - warmup_iters)
+        annealing_dist = float(cosine_cycle_iters - warmup_iters)
+        return \
+            min_learning_rate \
+            + 0.5 * (1 + math.cos(math.pi * warmup_dist / annealing_dist)) * \
+                delta_learning_rate
+
+    # post-annealing
+    elif t > cosine_cycle_iters:
+        return min_learning_rate
+
+    else:
+        assert False, f"invalid iteration number {t}"
