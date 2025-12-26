@@ -1,3 +1,5 @@
+import os
+import typing
 import numpy as np
 import numpy.typing as npt
 from typing import Callable, Iterable
@@ -519,3 +521,26 @@ def get_batch(
     increments: torch.Tensor = torch.arange(context_length)
     indices: torch.Tensor = starts.unsqueeze(-1) + increments.unsqueeze(0)
     return torch_dataset[indices].to(device), torch_dataset[indices + 1].to(device)
+
+def save_checkpoint(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    iteration: int,
+    out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes]
+):
+    obj = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "iteration": iteration
+    }
+    torch.save(obj, out)
+
+def load_checkpoint(
+    src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer
+) -> int:
+    obj = torch.load(src)
+    model.load_state_dict(obj["model"])
+    optimizer.load_state_dict(obj["optimizer"])
+    return obj["iteration"]
