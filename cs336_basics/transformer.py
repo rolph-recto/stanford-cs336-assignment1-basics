@@ -512,10 +512,10 @@ def get_batch(
         context_length: int,
         device: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    torch_dataset: torch.Tensor = torch.from_numpy(dataset).to(device)
+    torch_dataset: torch.Tensor = torch.from_numpy(dataset)
 
     max_start: int = dataset.shape[0] - context_length
     starts: torch.Tensor = torch.randint(0, max_start, (batch_size,), device=device)
-    increments: torch.Tensor = torch.arange(context_length, device=device)
+    increments: torch.Tensor = torch.arange(context_length)
     indices: torch.Tensor = starts.unsqueeze(-1) + increments.unsqueeze(0)
-    return torch_dataset[indices], torch_dataset[indices + 1]
+    return torch_dataset[indices].to(device), torch_dataset[indices + 1].to(device)
