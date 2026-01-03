@@ -87,7 +87,7 @@ def train_tokenizer(config: dict, args: argparse.Namespace):
 
 def tokenize_dataset(config: dict, args: argparse.Namespace):
     tokenizer_config = config["tokenizer"]
-    tokenizer = Tokenizer.from_files(
+    tokenizer = Tokenizer.from_files2(
         vocab_filepath=tokenizer_config["vocab_file"],
         merges_filepath=tokenizer_config["merges_file"],
         special_tokens=tokenizer_config["special_tokens"]
