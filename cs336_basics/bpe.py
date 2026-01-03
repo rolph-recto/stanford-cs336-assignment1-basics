@@ -206,9 +206,9 @@ class Tokenizer:
     def from_files(_cls, vocab_filepath, merges_filepath, special_tokens=None):
         vocab: dict[int, bytes] = dict()
         with open(vocab_filepath, "r") as f:
-            vocab_index: dict[bytes, int] = json.load(f)
+            vocab_index: dict[str, int] = json.load(f)
             for token, index in vocab_index.items():
-                vocab[index] = token
+                vocab[index] = token.encode("utf-8")
 
         merges: list[tuple[bytes,bytes]] = []
         with open(merges_filepath) as f:
@@ -275,3 +275,32 @@ class Tokenizer:
     def decode(self, ids: list[int]) -> str:
         bs: bytes = b''.join(self.vocab[id] for id in ids)
         return bs.decode("utf-8", errors="replace")
+
+    def to_files(self, vocab_filepath: str, merges_filepath: str):
+        """Save the tokenizer to vocab and merges files.
+
+        This is the inverse of the from_files class method.
+
+        Args:
+            vocab_filepath: Path to save the vocabulary JSON file
+            merges_filepath: Path to save the merges text file
+        """
+        # Save vocabulary as JSON with token strings as keys and indices as values
+        # Use Latin-1 encoding which preserves all 256 byte values
+        vocab_index = {}
+        for idx, token_bytes in self.vocab.items():
+            # Use Latin-1 encoding which maps each byte to a character
+            token_str = token_bytes.decode('latin-1')
+            vocab_index[token_str] = idx
+
+        with open(vocab_filepath, 'w') as f:
+            json.dump(vocab_index, f, ensure_ascii=False, indent=2)
+
+        # Save merges as text file with each merge on a separate line
+        with open(merges_filepath, 'w') as f:
+            for token1_bytes, token2_bytes in self.merges:
+                # Convert bytes to strings using Latin-1 encoding
+                token1_str = token1_bytes.decode('latin-1')
+                token2_str = token2_bytes.decode('latin-1')
+                line = token1_str + token2_str
+                f.write(line + '\n')
