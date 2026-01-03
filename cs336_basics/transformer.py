@@ -552,3 +552,49 @@ def load_checkpoint(
     model.load_state_dict(obj["model"])
     optimizer.load_state_dict(obj["optimizer"])
     return obj["iteration"]
+
+def decode(
+    model: torch.nn.Module,
+    tokenizer: Tokenizer,
+    prompt: str,
+    context_length: int,
+    max_tokens: int = -1,
+    temperature: float = 1.0,
+    top_p: float = 1.0
+) -> str:
+    in_tensor: torch.Tensor = torch.zeros(1, context_length, dtype=torch.int)
+    i: int = 0
+    for token in tokenizer.encode(prompt):
+        in_tensor[0,i] = token
+        i += 1
+
+    output_tokens: list[int] = []
+    num_tokens: int = 0
+    while num_tokens < max_tokens:
+        logits: torch.Tensor = model(in_tensor)[0,i-1]
+
+        # if temperature is 0, do greedy decoding
+        if temperature == 0.0:
+            next_token = logits.argmax().item()
+        
+        else:
+            logits = softmax(logits / temperature, 0)
+            masked_logits = logits
+
+            if top_p < 1.0:
+                masked_logits = torch.zeros_like(logits)
+                cur_p = 0.0
+                for prob, index in torch.sort(logits, descending=True):
+                    cur_p += prob
+                    masked_logits[index] = prob
+                    if cur_p >= top_p:
+                        break
+
+            next_token = torch.multinomial(masked_logits, 1).item()
+
+        output_tokens.append(int(next_token))
+        in_tensor[0,i] = next_token
+        num_tokens += 1
+        i += 1
+
+    return tokenizer.decode(output_tokens)
