@@ -8,12 +8,17 @@ import os
 import json
 
 def run_train_loop(
+    project: str,
+    run: str,
+    description: str,
     checkpoint_dir: str,
     checkpoint_prefix: str,
-    dataset: torch.Tensor,
+    train_dataset: torch.Tensor,
+    val_dataset: torch.Tensor,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    batch_size: int,
+    train_batch_size: int,
+    val_batch_size: int,
     context_length: int,
     max_l2_norm: float,
     epochs: int,
@@ -22,27 +27,55 @@ def run_train_loop(
 ):
     assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
 
+    # Initialize wandb
+    wandb.init(
+        entity="rolph-recto",
+        project=project,
+        id=run,
+        name=description
+    )
+
     model.train()
-    iteration: int = 0
+    global_iteration: int = 0
     for epoch in range(1, epochs+1):
         print(f"Epoch {epoch}")
 
         for iteration in range(1, iterations_per_epoch+1):
-            print("iteration {i} of {iterations_per_epoch} of epoch {epoch}")
+            print(f"Iteration {iteration} of {iterations_per_epoch} of epoch {epoch}")
 
             optimizer.zero_grad()
-            inputs, targets = torch_get_batch(dataset, batch_size, context_length, device)
+            inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
             outputs = model(inputs)
             loss = cross_entropy(outputs, targets)
             loss.backward()
             gradient_clipping(model.parameters(), max_l2_norm)
             optimizer.step()
 
-            iteration += 1
+            # Log loss to wandb
+            wandb.log({
+                "train_loss": loss.item(),
+                "iteration": global_iteration
+            })
 
-        checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
-        save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
+            global_iteration += 1
+
+        # compute validation loss
+        with torch.no_grad():
+            val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
+            val_outputs = model(val_inputs)
+            val_loss = cross_entropy(val_outputs, val_targets)
+
+            wandb.log({
+                "val_loss": val_loss.item(),
+                "iteration": global_iteration
+            })
+
+        checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{global_iteration}.pt")
+        save_checkpoint(model, optimizer, global_iteration, checkpoint_filepath)
         print(f"Finished epoch {epoch}, saving checkpoint in {checkpoint_filepath}")
+
+    # Finish wandb run
+    wandb.finish()
 
 def tokenize_dataset(config: dict, args: argparse.Namespace):
     tokenizer_config = config["tokenizer"]
@@ -59,7 +92,8 @@ def tokenize_dataset(config: dict, args: argparse.Namespace):
 def train(config: dict, args: argparse.Namespace):
     hyperparams = config["hyperparameters"]
 
-    dataset = torch.load(config["dataset"])
+    train_dataset = torch.load(config["train_dataset"])
+    val_dataset = torch.load(config["val_dataset"])
 
     model = Transformer(
         vocab_size=hyperparams["vocab_size"],
@@ -81,12 +115,17 @@ def train(config: dict, args: argparse.Namespace):
    )
 
     run_train_loop(
+        config["project"],
+        config["run"],
+        config["description"],
         config["checkpoint"]["dir"],
         config["checkpoint"]["prefix"],
-        dataset,
+        train_dataset,
+        val_dataset,
         model,
         optimizer,
-        hyperparams["batch_size"],
+        hyperparams["train_batch_size"],
+        hyperparams["val_batch_size"],
         hyperparams["context_length"],
         hyperparams["max_l2_norm"],
         config["epochs"],

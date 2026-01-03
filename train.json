@@ -1,6 +1,7 @@
 {
     "project": "cs336-assignment1",
     "run": "test",
+    "description": "",
     "checkpoint": {
         "dir": "checkpoints/test",
         "prefix": ""
@@ -11,6 +12,8 @@
         "special_tokens": ["<endoftoken>"]
     },
     "hyperparameters": {
+        "train_batch_size": 16,
+        "val_batch_size": 32,
         "vocab_size": 10000,
         "context_length": 256,
         "d_model": 512,
@@ -25,7 +28,8 @@
         "eps": 1e-8,
         "max_l2_norm": 1.0
     },
-    "dataset": "",
+    "train_dataset": "",
+    "val_dataset": "",
     "epochs": 1,
     "iterations_per_epoch": 1,
     "device": "mps"
