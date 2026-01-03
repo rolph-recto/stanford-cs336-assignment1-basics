@@ -8,6 +8,8 @@ import math
 import torch
 from random import randint
 
+from cs336_basics.bpe import Tokenizer
+
 class Linear(torch.nn.Module):
     def __init__(
         self,
@@ -514,13 +516,19 @@ def get_batch(
         context_length: int,
         device: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    torch_dataset: torch.Tensor = torch.from_numpy(dataset)
+    return torch_get_batch(torch.from_numpy(dataset), batch_size, context_length, device)
 
+def torch_get_batch(
+    dataset: torch.Tensor,
+    batch_size: int,
+    context_length: int,
+    device: str
+) -> tuple[torch.Tensor, torch.Tensor]:
     max_start: int = dataset.shape[0] - context_length
     starts: torch.Tensor = torch.randint(0, max_start, (batch_size,), device=device)
     increments: torch.Tensor = torch.arange(context_length)
     indices: torch.Tensor = starts.unsqueeze(-1) + increments.unsqueeze(0)
-    return torch_dataset[indices].to(device), torch_dataset[indices + 1].to(device)
+    return dataset[indices].to(device), dataset[indices + 1].to(device)
 
 def save_checkpoint(
     model: torch.nn.Module,

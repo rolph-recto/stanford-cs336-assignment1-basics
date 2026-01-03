@@ -202,6 +202,7 @@ class Tokenizer:
             self.primary_special_tokens_pattern: re.Pattern[bytes] = \
                 re.compile(primary_special_tokens_pattern_str.encode("utf-8"))
 
+    @classmethod
     def from_files(_cls, vocab_filepath, merges_filepath, special_tokens=None):
         vocab: dict[int, bytes] = dict()
         with open(vocab_filepath, "r") as f:
@@ -225,6 +226,8 @@ class Tokenizer:
                         
         return Tokenizer(vocab, merges, special_tokens)
 
+    def vocab_size(self) -> int:
+        return len(self.vocab)
 
     def encode(self, text: str) -> list[int]:
         if len(self.primary_special_tokens) > 0:
