@@ -203,6 +203,14 @@ class Tokenizer:
                 re.compile(primary_special_tokens_pattern_str.encode("utf-8"))
 
     @classmethod
+    def bytes_to_line(_cls, bs: bytes) -> str:
+        return " ".join(map(lambda x: str(x), list(bs)))
+
+    @classmethod
+    def line_to_bytes(_cls, line: str) -> bytes:
+        return bytes(map(lambda x: int(x), line.split(" ")))
+
+    @classmethod
     def from_files(_cls, vocab_filepath, merges_filepath, special_tokens=None):
         vocab: dict[int, bytes] = dict()
         with open(vocab_filepath, "r") as f:
@@ -223,6 +231,30 @@ class Tokenizer:
 
                 second_token = line_bytes[len(first_token):]
                 merges.append((first_token, second_token))
+                        
+        return Tokenizer(vocab, merges, special_tokens)
+
+    @classmethod
+    def from_files2(_cls, vocab_filepath, merges_filepath, special_tokens=None):
+        vocab: dict[int, bytes] = dict()
+        vocab_index: dict[bytes, int] = dict()
+        with open(vocab_filepath, "r") as f:
+            for index, line in enumerate(f):
+                token = Tokenizer.line_to_bytes(line)
+                vocab[index] = token
+                vocab_index[token] = index
+
+        merges: list[tuple[bytes,bytes]] = []
+        with open(merges_filepath) as f:
+            first_token: bytes | None = None
+            for line in f:
+                if first_token is None:
+                    first_token = Tokenizer.line_to_bytes(line)
+
+                else:
+                    second_token = Tokenizer.line_to_bytes(line)
+                    merges.append((first_token, second_token))
+                    first_token = None
                         
         return Tokenizer(vocab, merges, special_tokens)
 
@@ -285,22 +317,22 @@ class Tokenizer:
             vocab_filepath: Path to save the vocabulary JSON file
             merges_filepath: Path to save the merges text file
         """
-        # Save vocabulary as JSON with token strings as keys and indices as values
-        # Use Latin-1 encoding which preserves all 256 byte values
-        vocab_index = {}
-        for idx, token_bytes in self.vocab.items():
-            # Use Latin-1 encoding which maps each byte to a character
-            token_str = token_bytes.decode('latin-1')
-            vocab_index[token_str] = idx
-
         with open(vocab_filepath, 'w') as f:
-            json.dump(vocab_index, f, ensure_ascii=False, indent=2)
+            for i in range(self.vocab_size()):
+                print(f"tok {i}: {self.vocab[i]}")
+                if i == 0:
+                    f.write(f"{Tokenizer.bytes_to_line(self.vocab[i])}")
 
-        # Save merges as text file with each merge on a separate line
+                else:
+                    f.write(f"\n{Tokenizer.bytes_to_line(self.vocab[i])}")
+
         with open(merges_filepath, 'w') as f:
-            for token1_bytes, token2_bytes in self.merges:
-                # Convert bytes to strings using Latin-1 encoding
-                token1_str = token1_bytes.decode('latin-1')
-                token2_str = token2_bytes.decode('latin-1')
-                line = token1_str + token2_str
-                f.write(line + '\n')
+            for i, (token1_bytes, token2_bytes) in enumerate(self.merges):
+                if i == 0:
+                    f.write(f"{Tokenizer.bytes_to_line(token1_bytes)}")
+                    f.write(f"\n{Tokenizer.bytes_to_line(token2_bytes)}")
+
+                else:
+                    f.write(f"\n{Tokenizer.bytes_to_line(token1_bytes)}")
+                    f.write(f"\n{Tokenizer.bytes_to_line(token2_bytes)}")
+
