@@ -1,20 +1,21 @@
 {
     "project": "cs336-assignment1",
     "run": "test",
-    "description": "",
+    "description": "testing wandb integration",
     "checkpoint": {
+        "enabled": false,
         "dir": "checkpoints/test",
         "prefix": ""
     },
     "tokenizer": {
-        "vocab_file": "test_vocab.json",
+        "vocab_file": "test_vocab.txt",
         "merges_file": "test_merges.txt",
         "special_tokens": ["<|endoftext|>"]
     },
     "hyperparameters": {
         "train_batch_size": 16,
         "val_batch_size": 32,
-        "vocab_size": 50257,
+        "vocab_size": 10000,
         "context_length": 256,
         "d_model": 512,
         "num_layers": 4,
@@ -28,9 +29,9 @@
         "eps": 1e-8,
         "max_l2_norm": 1.0
     },
-    "train_dataset": "data/TinyStoriesV2-GPT4-small-train.txt",
-    "val_dataset": "data/TinyStoriesV2-GPT4-small-valid.txt",
-    "epochs": 1,
-    "iterations_per_epoch": 1,
-    "device": "mps"
+    "train_dataset": "data/TinyStoriesV2-GPT4-small-valid.pt",
+    "val_dataset": "data/TinyStoriesV2-GPT4-small-valid.pt",
+    "epochs": 2,
+    "iterations_per_epoch": 5,
+    "device": "cpu"
 }

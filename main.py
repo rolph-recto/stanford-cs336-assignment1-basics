@@ -5,22 +5,24 @@ import argparse
 import wandb
 import torch
 import os
+from dotenv import load_dotenv
 import json
 
 def run_train_loop(
     project: str,
     run: str,
     description: str,
+    checkpoint_enabled: bool,
     checkpoint_dir: str,
     checkpoint_prefix: str,
     train_dataset: torch.Tensor,
     val_dataset: torch.Tensor,
+    hyperparams: dict,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     train_batch_size: int,
     val_batch_size: int,
     context_length: int,
-    max_l2_norm: float,
     epochs: int,
     iterations_per_epoch: int,
     device: str
@@ -28,51 +30,69 @@ def run_train_loop(
     assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
 
     # Initialize wandb
+    wandb.login(key=os.getenv("WANDB_API_KEY"))
     wandb.init(
-        entity="rolph-recto",
+        entity="rolph-recto-personal",
         project=project,
         id=run,
-        name=description
+        name=description,
+        config=hyperparams
     )
 
+    with torch.no_grad():
+        val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
+        val_outputs = model(val_inputs)
+        val_loss = cross_entropy(val_outputs, val_targets)
+
+        print(f"Start Val Loss: {val_loss.item()}")
+
+        wandb.log({
+            "val_loss": val_loss.item(),
+            "iteration": 0
+        })
+
     model.train()
-    global_iteration: int = 0
-    for epoch in range(1, epochs+1):
-        print(f"Epoch {epoch}")
+    torch.autograd.set_detect_anomaly(True)
+    epoch: int = 0
+    iteration: int = 0
+    while epoch < epochs:
+        print(f"Iteration {iteration+1}, Epoch {epoch+1}")
 
-        for iteration in range(1, iterations_per_epoch+1):
-            print(f"Iteration {iteration} of {iterations_per_epoch} of epoch {epoch}")
+        optimizer.zero_grad()
+        inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
+        outputs = model(inputs)
+        loss = cross_entropy(outputs, targets)
+        loss.backward()
+        gradient_clipping(model.parameters(), hyperparams["max_l2_norm"])
+        optimizer.step()
 
-            optimizer.zero_grad()
-            inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
-            outputs = model(inputs)
-            loss = cross_entropy(outputs, targets)
-            loss.backward()
-            gradient_clipping(model.parameters(), max_l2_norm)
-            optimizer.step()
+        wandb.log({
+            "train_loss": loss.item(),
+            "iteration": iteration+1
+        })
+        print(f"Iteration {iteration+1}, Train Loss: {loss.item()}")
 
-            # Log loss to wandb
-            wandb.log({
-                "train_loss": loss.item(),
-                "iteration": global_iteration
-            })
+        if iteration % iterations_per_epoch == 0:
+            # compute validation loss
+            with torch.no_grad():
+                val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
+                val_outputs = model(val_inputs)
+                val_loss = cross_entropy(val_outputs, val_targets)
 
-            global_iteration += 1
+                wandb.log({
+                    "val_loss": val_loss.item(),
+                    "iteration": iteration+1
+                })
+                print(f"Iteration {iteration+1}, Val Loss: {val_loss.item()}")
 
-        # compute validation loss
-        with torch.no_grad():
-            val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
-            val_outputs = model(val_inputs)
-            val_loss = cross_entropy(val_outputs, val_targets)
+            if checkpoint_enabled:
+                checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
+                save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
+                print(f"Finished epoch {epoch+1}, saving checkpoint in {checkpoint_filepath}")
 
-            wandb.log({
-                "val_loss": val_loss.item(),
-                "iteration": global_iteration
-            })
+            epoch += 1
 
-        checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{global_iteration}.pt")
-        save_checkpoint(model, optimizer, global_iteration, checkpoint_filepath)
-        print(f"Finished epoch {epoch}, saving checkpoint in {checkpoint_filepath}")
+        iteration += 1
 
     # Finish wandb run
     wandb.finish()
@@ -126,16 +146,17 @@ def train(config: dict, args: argparse.Namespace):
         config["project"],
         config["run"],
         config["description"],
+        config["checkpoint"]["enabled"],
         config["checkpoint"]["dir"],
         config["checkpoint"]["prefix"],
         train_dataset,
         val_dataset,
+        hyperparams,
         model,
         optimizer,
         hyperparams["train_batch_size"],
         hyperparams["val_batch_size"],
         hyperparams["context_length"],
-        hyperparams["max_l2_norm"],
         config["epochs"],
         config["iterations_per_epoch"],
         config["device"]
@@ -187,6 +208,8 @@ def decode(config: dict, args: argparse.Namespace):
     print(output)
 
 def main():
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="CS336 Basics: Transformer training and inference")
     subparsers = parser.add_subparsers(dest="command", help="Command to run", required=True)
 

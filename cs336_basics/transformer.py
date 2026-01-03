@@ -215,10 +215,12 @@ class RoPE(torch.nn.Module):
             )
         
         # flatten vectors back into original shape
-        return einops.rearrange(
+        result_batched = einops.rearrange(
             result_batched,
             '... seq_len k h -> ... seq_len (k h)'
         )
+
+        return result_batched
 
 def softmax(x: torch.Tensor, d: int) -> torch.Tensor:
     d_max = x.amax(d, keepdim=True)
@@ -312,6 +314,12 @@ class CausalMultiHeadSelfAttention(torch.nn.Module):
 
         if self.rope is not None:
             assert token_positions is not None
+            assert Q.shape == K.shape
+            
+            # since d_model dim of x has been split into heads and d_embed dims,
+            # token_positions must be broadcast across heads dim
+            token_positions = token_positions.unsqueeze(-2).expand(Q.shape[:-1])
+
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
         
@@ -358,8 +366,8 @@ class PreNormTransformerBlock(torch.nn.Module):
         token_positions: torch.Tensor = \
             torch.arange(seq_length).expand(x.shape[:-1])
 
-        x += self.attention(self.prenorm_attn(x), token_positions)
-        x += self.ffn(self.prenorm_ffn(x))
+        x = x + self.attention(self.prenorm_attn(x), token_positions)
+        x = x + self.ffn(self.prenorm_ffn(x))
         return x
 
 class Transformer(torch.nn.Module):
@@ -421,7 +429,7 @@ class Transformer(torch.nn.Module):
 #   cannot underflow.
 def cross_entropy(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     batch_size: int = logits.size(0)
-    target_values = logits[torch.arange(batch_size),targets]
+    target_values = logits.gather(dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)
     logits_max = logits.amax(-1)
     log_sum_exp = torch.exp(logits - logits_max.unsqueeze(-1)).sum(-1).log() + logits_max
 
