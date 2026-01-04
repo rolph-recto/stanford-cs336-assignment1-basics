@@ -7,6 +7,10 @@ import torch
 import os
 from dotenv import load_dotenv
 import json
+import tokenizers as hf_tokenizers 
+from tokenizers import \
+    trainers as hf_trainers, models as hf_models, \
+    pre_tokenizers as hf_pre_tokenizers
 
 def run_train_loop(
     project: str,
@@ -98,23 +102,36 @@ def run_train_loop(
     wandb.finish()
 
 def train_tokenizer(config: dict, args: argparse.Namespace):
-    special_tokens = config["tokenizer"]["special_tokens"]
-    vocab, merges = \
-        train_bpe(args.dataset, config["hyperparameters"]["vocab_size"], special_tokens)
+    trainer = \
+        hf_trainers.BpeTrainer(
+            vocab_size=config["hyperparameters"]["vocab_size"],
+            special_tokens=config["tokenizer"]["special_tokens"],
+        )
 
-    tokenizer = Tokenizer(vocab, merges, special_tokens)
-    tokenizer.to_files(config["tokenizer"]["vocab_file"], config["tokenizer"]["merges_file"])
+    tokenizer = hf_tokenizers.Tokenizer(hf_models.BPE())
+    tokenizer.train([args.dataset], trainer)
+    tokenizer.save(config["tokenizer"]["file"])
+
+    # special_tokens = config["tokenizer"]["special_tokens"]
+    # vocab, merges = \
+    #     train_bpe(args.dataset, config["hyperparameters"]["vocab_size"], special_tokens)
+
+    # tokenizer = Tokenizer(vocab, merges, special_tokens)
+    # tokenizer.to_files(config["tokenizer"]["vocab_file"], config["tokenizer"]["merges_file"])
 
 def tokenize_dataset(config: dict, args: argparse.Namespace):
     tokenizer_config = config["tokenizer"]
-    tokenizer = Tokenizer.from_files2(
-        vocab_filepath=tokenizer_config["vocab_file"],
-        merges_filepath=tokenizer_config["merges_file"],
-        special_tokens=tokenizer_config["special_tokens"]
-    )
+    tokenizer: hf_tokenizers.Tokenizer = hf_tokenizers.Tokenizer.from_file(tokenizer_config["file"])
+
+    # tokenizer = Tokenizer.from_files2(
+    #     vocab_filepath=tokenizer_config["vocab_file"],
+    #     merges_filepath=tokenizer_config["merges_file"],
+    #     special_tokens=tokenizer_config["special_tokens"]
+    # )
 
     with open(args.input_file, "r") as f:
-        dataset = torch.tensor(tokenizer.encode(f.read()))
+        encoded_input: hf_tokenizers.Encoding = tokenizer.encode(f.read())
+        dataset = torch.tensor(encoded_input.ids)
         torch.save(dataset, args.output_file)
 
 def train(config: dict, args: argparse.Namespace):

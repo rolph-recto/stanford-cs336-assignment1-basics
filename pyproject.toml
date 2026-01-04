@@ -5,6 +5,7 @@ description = "CS336 Assignment 1"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "tokenizers>=0.2.1",
     "python-dotenv>=1.2.0",
     "einops>=0.8.1", # tensor operations
     "einx>=0.3.0", # more general tensor operations
