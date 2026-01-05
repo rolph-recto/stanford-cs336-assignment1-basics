@@ -12,6 +12,18 @@ from tokenizers import \
     trainers as hf_trainers, models as hf_models, \
     pre_tokenizers as hf_pre_tokenizers
 
+def str_to_dtype(s: str) -> torch.dtype:
+    if s == "float16":
+        return torch.float16
+
+    elif s == "bfloat16":
+        return torch.bfloat16
+
+    elif s == "float32":
+        return torch.float32
+
+    assert False, f"invalid dtype: {s}"
+
 def run_train_loop(
     project: str,
     run: str,
@@ -29,20 +41,23 @@ def run_train_loop(
     context_length: int,
     epochs: int,
     iterations_per_epoch: int,
-    device: str
+    device: torch.device,
+    offline: bool
 ):
     assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
 
     # Initialize wandb
-    wandb.login(key=os.getenv("WANDB_API_KEY"))
-    wandb.init(
-        entity="rolph-recto-personal",
-        project=project,
-        id=run,
-        name=description,
-        config=hyperparams
-    )
+    if not offline:
+        wandb.login(key=os.getenv("WANDB_API_KEY"))
+        wandb.init(
+            entity="rolph-recto-personal",
+            project=project,
+            id=run,
+            name=description,
+            config=hyperparams
+        )
 
+    print("Computing initial val loss...")
     with torch.no_grad():
         val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
         val_outputs = model(val_inputs)
@@ -50,30 +65,36 @@ def run_train_loop(
 
         print(f"Start Val Loss: {val_loss.item()}")
 
-        wandb.log({
-            "val_loss": val_loss.item(),
-            "iteration": 0
-        })
+        if not offline:
+            wandb.log({
+                "val_loss": val_loss.item(),
+                "iteration": 0
+            })
 
     model.train()
-    torch.autograd.set_detect_anomaly(True)
+
     epoch: int = 0
     iteration: int = 0
+
+    print("Beginning training loop")
     while epoch < epochs:
         print(f"Iteration {iteration+1}, Epoch {epoch+1}")
 
         optimizer.zero_grad()
         inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
+
         outputs = model(inputs)
         loss = cross_entropy(outputs, targets)
         loss.backward()
         gradient_clipping(model.parameters(), hyperparams["max_l2_norm"])
         optimizer.step()
 
-        wandb.log({
-            "train_loss": loss.item(),
-            "iteration": iteration+1
-        })
+        if not offline:
+            wandb.log({
+                "train_loss": loss.item(),
+                "iteration": iteration+1
+            })
+
         print(f"Iteration {iteration+1}, Train Loss: {loss.item()}")
 
         if iteration % iterations_per_epoch == 0:
@@ -83,10 +104,12 @@ def run_train_loop(
                 val_outputs = model(val_inputs)
                 val_loss = cross_entropy(val_outputs, val_targets)
 
-                wandb.log({
-                    "val_loss": val_loss.item(),
-                    "iteration": iteration+1
-                })
+                if not offline:
+                    wandb.log({
+                        "val_loss": val_loss.item(),
+                        "iteration": iteration+1
+                    })
+
                 print(f"Iteration {iteration+1}, Val Loss: {val_loss.item()}")
 
             if checkpoint_enabled:
@@ -99,7 +122,8 @@ def run_train_loop(
         iteration += 1
 
     # Finish wandb run
-    wandb.finish()
+    if not offline:
+        wandb.finish()
 
 def train_tokenizer(config: dict, args: argparse.Namespace):
     trainer = \
@@ -140,6 +164,9 @@ def train(config: dict, args: argparse.Namespace):
     train_dataset = torch.load(config["train_dataset"])
     val_dataset = torch.load(config["val_dataset"])
 
+    device = torch.device(config["device"])
+    dtype = str_to_dtype(config["dtype"])
+
     model = Transformer(
         vocab_size=hyperparams["vocab_size"],
         context_length=hyperparams["context_length"],
@@ -148,7 +175,8 @@ def train(config: dict, args: argparse.Namespace):
         num_heads=hyperparams["num_heads"],
         d_ff=hyperparams["d_ff"],
         theta=hyperparams["theta"],
-        device=config["device"]
+        device=device,
+        dtype=dtype
     )
 
     optimizer = AdamW(
@@ -176,7 +204,8 @@ def train(config: dict, args: argparse.Namespace):
         hyperparams["context_length"],
         config["epochs"],
         config["iterations_per_epoch"],
-        config["device"]
+        device,
+        config["offline"]
     )
 
 def decode(config: dict, args: argparse.Namespace):
@@ -200,7 +229,8 @@ def decode(config: dict, args: argparse.Namespace):
         num_heads=hyperparams["num_heads"],
         d_ff=hyperparams["d_ff"],
         theta=hyperparams["theta"],
-        device=config["device"]
+        device=torch.device(config["device"]),
+        dtype=str_to_dtype(config["dtype"])
     )
 
     model.load_state_dict(checkpoint["model"])

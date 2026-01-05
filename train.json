@@ -34,5 +34,7 @@
     "val_dataset": "data/TinyStoriesV2-GPT4-small-valid.pt",
     "epochs": 10,
     "iterations_per_epoch": 5,
-    "device": "cpu"
+    "device": "cpu",
+    "dtype": "float32",
+    "offline": true
 }

@@ -52,7 +52,7 @@ class Embedding(torch.nn.Module):
 
         embedding_weights: torch.Tensor = \
             torch.nn.init.trunc_normal_(
-                torch.empty(vocab_size, d_model, device=device, dtype=dtype),
+                torch.empty((vocab_size, d_model), device=device, dtype=dtype),
                 mean = 0.0,
                 std = 1.0,
                 a = -3.0,
@@ -178,16 +178,16 @@ class RoPE(torch.nn.Module):
     ):
         super().__init__()
 
-        k_indices = torch.arange(0, d_k, 2, device=device, dtype=dtype).float()
+        k_indices = torch.arange(0, d_k, 2, device=device, dtype=torch.int32).float()
         freqs = 1.0 / (theta ** (k_indices / d_k))
         
         # 2. Compute the outer product of positions and frequencies
-        pos = torch.arange(max_seq_len, device=device, dtype=dtype).float()
+        pos = torch.arange(max_seq_len, device=device, dtype=torch.int32).float()
         angles = torch.outer(pos, freqs) # Shape: (max_seq_len, d_k // 2)
 
         # 3. Create the 2x2 rotation matrices
-        cos = torch.cos(angles)
-        sin = torch.sin(angles)
+        cos = torch.cos(angles).to(device=device, dtype=dtype)
+        sin = torch.sin(angles).to(device=device, dtype=dtype)
         
         # Build matrices: [[cos, -sin], [sin, cos]]
         rot = torch.stack([
@@ -390,11 +390,12 @@ class Transformer(torch.nn.Module):
             torch.nn.Sequential(*[
                 PreNormTransformerBlock(
                     d_model, num_heads, d_ff,
-                    max_seq_len=context_length, theta=theta
+                    max_seq_len=context_length, theta=theta,
+                    device=device, dtype=dtype
                 ) for _ in range(num_layers)
             ]),
-            RMSNorm(d_model),
-            Linear(d_model, vocab_size),
+            RMSNorm(d_model, device=device, dtype=dtype),
+            Linear(d_model, vocab_size, device=device, dtype=dtype),
         ])
 
     # this returns raw logits, not normalized to a distribution by softmax
@@ -530,10 +531,10 @@ def torch_get_batch(
     dataset: torch.Tensor,
     batch_size: int,
     context_length: int,
-    device: str
+    device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     max_start: int = dataset.shape[0] - context_length
-    starts: torch.Tensor = torch.randint(0, max_start, (batch_size,), device=device)
+    starts: torch.Tensor = torch.randint(0, max_start, (batch_size,))
     increments: torch.Tensor = torch.arange(context_length)
     indices: torch.Tensor = starts.unsqueeze(-1) + increments.unsqueeze(0)
     return dataset[indices].to(device), dataset[indices + 1].to(device)
