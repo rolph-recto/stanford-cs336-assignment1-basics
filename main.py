@@ -11,6 +11,7 @@ import tokenizers as hf_tokenizers
 from tokenizers import \
     trainers as hf_trainers, models as hf_models, \
     pre_tokenizers as hf_pre_tokenizers
+from tqdm import tqdm
 
 def str_to_dtype(s: str) -> torch.dtype:
     if s == "float16":
@@ -23,6 +24,28 @@ def str_to_dtype(s: str) -> torch.dtype:
         return torch.float32
 
     assert False, f"invalid dtype: {s}"
+
+def print_validation(
+    iteration: int,
+    val_dataset: torch.Tensor,
+    val_batch_size: int,
+    context_length: int,
+    model: torch.nn.Module,
+    device: torch.device,
+    offline: bool
+):
+    with torch.no_grad():
+        val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
+        val_outputs = model(val_inputs)
+        val_loss = cross_entropy(val_outputs, val_targets)
+
+        print(f"Iteration {iteration}, Val Loss: {val_loss.item()}")
+
+        if not offline:
+            wandb.log({
+                "val_loss": val_loss.item(),
+                "iteration": iteration
+            })
 
 def run_train_loop(
     project: str,
@@ -57,19 +80,15 @@ def run_train_loop(
             config=hyperparams
         )
 
-    print("Computing initial val loss...")
-    with torch.no_grad():
-        val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
-        val_outputs = model(val_inputs)
-        val_loss = cross_entropy(val_outputs, val_targets)
-
-        print(f"Start Val Loss: {val_loss.item()}")
-
-        if not offline:
-            wandb.log({
-                "val_loss": val_loss.item(),
-                "iteration": 0
-            })
+    print_validation(
+        0,
+        val_dataset=val_dataset,
+        val_batch_size=val_batch_size,
+        context_length=context_length,
+        model=model,
+        device=device,
+        offline=offline
+    )
 
     model.train()
 
@@ -99,18 +118,15 @@ def run_train_loop(
 
         if iteration % iterations_per_epoch == 0:
             # compute validation loss
-            with torch.no_grad():
-                val_inputs, val_targets = torch_get_batch(val_dataset, val_batch_size, context_length, device)
-                val_outputs = model(val_inputs)
-                val_loss = cross_entropy(val_outputs, val_targets)
-
-                if not offline:
-                    wandb.log({
-                        "val_loss": val_loss.item(),
-                        "iteration": iteration+1
-                    })
-
-                print(f"Iteration {iteration+1}, Val Loss: {val_loss.item()}")
+            print_validation(
+                iteration,
+                val_dataset=val_dataset,
+                val_batch_size=val_batch_size,
+                context_length=context_length,
+                model=model,
+                device=device,
+                offline=offline
+            )
 
             if checkpoint_enabled:
                 checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
@@ -120,6 +136,16 @@ def run_train_loop(
             epoch += 1
 
         iteration += 1
+
+    print_validation(
+        iteration,
+        val_dataset=val_dataset,
+        val_batch_size=val_batch_size,
+        context_length=context_length,
+        model=model,
+        device=device,
+        offline=offline
+    )
 
     # Finish wandb run
     if not offline:
@@ -142,6 +168,40 @@ def train_tokenizer(config: dict, args: argparse.Namespace):
 
     # tokenizer = Tokenizer(vocab, merges, special_tokens)
     # tokenizer.to_files(config["tokenizer"]["vocab_file"], config["tokenizer"]["merges_file"])
+
+def read_in_chunks(file_object, chunk_size=1024*1024):
+  """Lazy function (generator) to read a file piece by piece.
+  Default chunk size: 1k."""
+  while True:
+      data = file_object.read(chunk_size)
+      if not data:
+          break
+      yield data
+
+def tokenize_dataset(config: dict, args: argparse.Namespace):
+    tokenizer_config = config["tokenizer"]
+    tokenizer: hf_tokenizers.Tokenizer = hf_tokenizers.Tokenizer.from_file(tokenizer_config["file"])
+
+    # tokenizer = Tokenizer.from_files2(
+    #     vocab_filepath=tokenizer_config["vocab_file"],
+    #     merges_filepath=tokenizer_config["merges_file"],
+    #     special_tokens=tokenizer_config["special_tokens"]
+    # )
+
+    chunk_size = 1024 * 1024
+    input_size = os.path.getsize(args.input_file)
+    with open(args.input_file, "r") as f:
+        tensors = []
+        i = 1
+        num_chunks = input_size // chunk_size + (0 if input_size % chunk_size == 0 else 1)
+        for chunk in tqdm(read_in_chunks(f, chunk_size), total=num_chunks):
+            encoded_input: hf_tokenizers.Encoding = tokenizer.encode(chunk)
+            tensor_input = torch.tensor(encoded_input.ids)
+            tensors.append(tensor_input)
+            i += 1
+
+        print(f"saving encoded input to {args.output_file}")
+        torch.save(torch.cat(tensors), args.output_file)
 
 def tokenize_dataset(config: dict, args: argparse.Namespace):
     tokenizer_config = config["tokenizer"]
