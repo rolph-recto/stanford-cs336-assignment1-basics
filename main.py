@@ -67,7 +67,8 @@ def run_train_loop(
     device: torch.device,
     offline: bool
 ):
-    assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
+    if checkpoint_enabled:
+        assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
 
     # Initialize wandb
     if not offline:
@@ -202,21 +203,6 @@ def tokenize_dataset(config: dict, args: argparse.Namespace):
 
         print(f"saving encoded input to {args.output_file}")
         torch.save(torch.cat(tensors), args.output_file)
-
-def tokenize_dataset(config: dict, args: argparse.Namespace):
-    tokenizer_config = config["tokenizer"]
-    tokenizer: hf_tokenizers.Tokenizer = hf_tokenizers.Tokenizer.from_file(tokenizer_config["file"])
-
-    # tokenizer = Tokenizer.from_files2(
-    #     vocab_filepath=tokenizer_config["vocab_file"],
-    #     merges_filepath=tokenizer_config["merges_file"],
-    #     special_tokens=tokenizer_config["special_tokens"]
-    # )
-
-    with open(args.input_file, "r") as f:
-        encoded_input: hf_tokenizers.Encoding = tokenizer.encode(f.read())
-        dataset = torch.tensor(encoded_input.ids)
-        torch.save(dataset, args.output_file)
 
 def train(config: dict, args: argparse.Namespace):
     hyperparams = config["hyperparameters"]
