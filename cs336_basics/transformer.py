@@ -271,6 +271,7 @@ class CausalMultiHeadSelfAttention(torch.nn.Module):
     ):
         super().__init__()
 
+        self.device = device
         self.heads: int = num_heads 
         self.d_e: int = d_model // num_heads
 
@@ -323,7 +324,7 @@ class CausalMultiHeadSelfAttention(torch.nn.Module):
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
         
-        seq_range = torch.arange(seq_length)
+        seq_range = torch.arange(seq_length, device=self.device)
         causal_mask: torch.Tensor = seq_range.unsqueeze(0) <= seq_range.unsqueeze(1)
 
         # heads: (... heads seq d_e)
