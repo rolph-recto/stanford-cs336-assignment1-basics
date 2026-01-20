@@ -30,8 +30,8 @@
     },
     "train_dataset": "data/TinyStoriesV2-GPT4-train.pt",
     "val_dataset": "data/TinyStoriesV2-GPT4-valid.pt",
-    "epochs": 400,
-    "iterations_per_epoch": 100,
+    "epochs": 160,
+    "iterations_per_epoch": 250,
     "device": "cuda",
     "dtype": "float32",
     "offline": false

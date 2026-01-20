@@ -118,6 +118,7 @@ def run_train_loop(
 
             if iteration % iterations_per_epoch == 0:
                 # compute validation loss
+                print("\n")
                 print_validation(
                     iteration,
                     val_dataset=val_dataset,
