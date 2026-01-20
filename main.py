@@ -97,46 +97,46 @@ def run_train_loop(
     iteration: int = 0
 
     print("Beginning training loop")
-    while epoch < epochs:
-        print(f"Iteration {iteration+1}, Epoch {epoch+1}")
+    with tqdm(total=iterations_per_epoch * epochs) as pbar:
+        while epoch < epochs:
+            optimizer.zero_grad()
+            inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
 
-        optimizer.zero_grad()
-        inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
+            outputs = model(inputs)
+            loss = cross_entropy(outputs, targets)
+            loss.backward()
+            gradient_clipping(model.parameters(), hyperparams["max_l2_norm"])
+            optimizer.step()
 
-        outputs = model(inputs)
-        loss = cross_entropy(outputs, targets)
-        loss.backward()
-        gradient_clipping(model.parameters(), hyperparams["max_l2_norm"])
-        optimizer.step()
+            if not offline:
+                wandb.log({
+                    "train_loss": loss.item(),
+                    "iteration": iteration+1
+                })
 
-        if not offline:
-            wandb.log({
-                "train_loss": loss.item(),
-                "iteration": iteration+1
-            })
+            pbar.set_description(f"Epoch {epoch+1}, Iteration {iteration+1}, Train Loss: {loss.item()}")
 
-        print(f"Iteration {iteration+1}, Train Loss: {loss.item()}")
+            if iteration % iterations_per_epoch == 0:
+                # compute validation loss
+                print_validation(
+                    iteration,
+                    val_dataset=val_dataset,
+                    val_batch_size=val_batch_size,
+                    context_length=context_length,
+                    model=model,
+                    device=device,
+                    offline=offline
+                )
 
-        if iteration % iterations_per_epoch == 0:
-            # compute validation loss
-            print_validation(
-                iteration,
-                val_dataset=val_dataset,
-                val_batch_size=val_batch_size,
-                context_length=context_length,
-                model=model,
-                device=device,
-                offline=offline
-            )
+                if checkpoint_enabled:
+                    checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
+                    save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
+                    print(f"Finished epoch {epoch+1}, saving checkpoint in {checkpoint_filepath}")
 
-            if checkpoint_enabled:
-                checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
-                save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
-                print(f"Finished epoch {epoch+1}, saving checkpoint in {checkpoint_filepath}")
+                epoch += 1
 
-            epoch += 1
-
-        iteration += 1
+            iteration += 1
+            pbar.update(1)
 
     print_validation(
         iteration,
