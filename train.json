@@ -1,5 +1,6 @@
 {
     "project": "cs336-assignment1",
+    "description": "initial-test",
     "checkpoint": {
         "enabled": false,
         "dir": "checkpoints/test",
