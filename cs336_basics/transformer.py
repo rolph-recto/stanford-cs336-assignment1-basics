@@ -568,11 +568,12 @@ def decode(
     tokenizer: hf_tokenizers.Tokenizer,
     prompt: str,
     context_length: int,
+    device: torch.device,
     max_tokens: int = -1,
     temperature: float = 1.0,
-    top_p: float = 1.0
+    top_p: float = 1.0,
 ) -> str:
-    in_tensor: torch.Tensor = torch.zeros(1, context_length, dtype=torch.int)
+    in_tensor: torch.Tensor = torch.zeros(1, context_length, dtype=torch.int, device=device)
     i: int = 0
 
     eot_token = tokenizer.encode("<endoftext>").ids[0]

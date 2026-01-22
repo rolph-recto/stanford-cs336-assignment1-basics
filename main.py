@@ -45,6 +45,7 @@ def print_validation(
             model=model,
             tokenizer=tokenizer,
             prompt=val_prompt,
+            device=device,
             context_length=context_length
         )
 
@@ -294,6 +295,8 @@ def decode(config: dict, args: argparse.Namespace):
     checkpoint = torch.load(args.checkpoint)
     hyperparams = config["hyperparameters"]
 
+    device = torch.device(config["device"])
+
     model = Transformer(
         vocab_size=hyperparams["vocab_size"],
         context_length=hyperparams["context_length"],
@@ -302,7 +305,7 @@ def decode(config: dict, args: argparse.Namespace):
         num_heads=hyperparams["num_heads"],
         d_ff=hyperparams["d_ff"],
         theta=hyperparams["theta"],
-        device=torch.device(config["device"]),
+        device=device,
         dtype=str_to_dtype(config["dtype"])
     )
 
@@ -320,6 +323,7 @@ def decode(config: dict, args: argparse.Namespace):
         tokenizer=tokenizer,
         prompt=args.prompt,
         context_length=hyperparams["context_length"],
+        device=device,
         max_tokens=max_tokens,
         temperature=temperature,
         top_p=top_p
