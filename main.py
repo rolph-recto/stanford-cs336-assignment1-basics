@@ -257,12 +257,15 @@ def train(config: dict, args: argparse.Namespace):
 
 def decode(config: dict, args: argparse.Namespace):
     # Load tokenizer
+    # tokenizer_config = config["tokenizer"]
+    # tokenizer = Tokenizer.from_files(
+    #     vocab_filepath=tokenizer_config["vocab_file"],
+    #     merges_filepath=tokenizer_config["merges_file"],
+    #     special_tokens=tokenizer_config["special_tokens"]
+    # )
+
     tokenizer_config = config["tokenizer"]
-    tokenizer = Tokenizer.from_files(
-        vocab_filepath=tokenizer_config["vocab_file"],
-        merges_filepath=tokenizer_config["merges_file"],
-        special_tokens=tokenizer_config["special_tokens"]
-    )
+    tokenizer: hf_tokenizers.Tokenizer = hf_tokenizers.Tokenizer.from_file(tokenizer_config["file"])
 
     # Load model from checkpoint
     checkpoint = torch.load(args.checkpoint)
@@ -329,7 +332,7 @@ def main():
     decode_parser.add_argument("--prompt", "-p", required=True, help="Prompt text for generation")
     decode_parser.add_argument("--temperature", "-t", type=float, default=1.0, help="Sampling temperature")
     decode_parser.add_argument("--top-p", type=float, default=1.0, help="Top-p sampling parameter")
-    decode_parser.add_argument("--max-tokens", type=int, default=-1, help="Maximum tokens to generate")
+    decode_parser.add_argument("-m", "--max_tokens", type=int, default=-1, help="Maximum tokens to generate")
 
     args = parser.parse_args()
 

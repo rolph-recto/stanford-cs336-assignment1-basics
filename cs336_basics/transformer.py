@@ -6,7 +6,7 @@ from typing import Callable, Iterable
 import einops
 import math
 import torch
-from random import randint
+import tokenizers as hf_tokenizers 
 
 from cs336_basics.bpe import Tokenizer
 
@@ -526,7 +526,7 @@ def get_batch(
         context_length: int,
         device: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    return torch_get_batch(torch.from_numpy(dataset), batch_size, context_length, device)
+    return torch_get_batch(torch.from_numpy(dataset), batch_size, context_length, torch.device(device))
 
 def torch_get_batch(
     dataset: torch.Tensor,
@@ -565,7 +565,7 @@ def load_checkpoint(
 
 def decode(
     model: torch.nn.Module,
-    tokenizer: Tokenizer,
+    tokenizer: hf_tokenizers.Tokenizer,
     prompt: str,
     context_length: int,
     max_tokens: int = -1,
@@ -574,12 +574,15 @@ def decode(
 ) -> str:
     in_tensor: torch.Tensor = torch.zeros(1, context_length, dtype=torch.int)
     i: int = 0
-    for token in tokenizer.encode(prompt):
+
+    eot_token = tokenizer.encode("<endoftext>").ids[0]
+    for token in tokenizer.encode(prompt).ids:
         in_tensor[0,i] = token
         i += 1
 
     output_tokens: list[int] = []
     num_tokens: int = 0
+    max_tokens = max(256 - i, max_tokens)
     while num_tokens < max_tokens:
         logits: torch.Tensor = model(in_tensor)[0,i-1]
 
@@ -603,6 +606,9 @@ def decode(
             next_token = torch.multinomial(masked_logits, 1).item()
 
         output_tokens.append(int(next_token))
+        if next_token == eot_token:
+            break
+
         in_tensor[0,i] = next_token
         num_tokens += 1
         i += 1
