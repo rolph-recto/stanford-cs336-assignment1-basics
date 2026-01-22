@@ -4,7 +4,7 @@
     "description": "hf tokenizer test",
     "checkpoint": {
         "enabled": false,
-        "dir": "checkpoints/test",
+        "dir": "../drive/MyDrive/models/cs336-assignment1",
         "prefix": ""
     },
     "tokenizer": {

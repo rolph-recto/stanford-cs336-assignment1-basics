@@ -55,7 +55,8 @@ def print_validation(
         if not offline:
             wandb.log({
                 "val_loss": val_loss.item(),
-                "iteration": iteration
+                "iteration": iteration,
+                "val_decode": val_decode
             })
 
 def run_train_loop(
@@ -167,6 +168,9 @@ def run_train_loop(
         device=device,
         offline=offline
     )
+
+    # save final model
+    save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
 
     # Finish wandb run
     if not offline:
