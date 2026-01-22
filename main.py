@@ -12,6 +12,7 @@ from tokenizers import \
     trainers as hf_trainers, models as hf_models, \
     pre_tokenizers as hf_pre_tokenizers
 from tqdm import tqdm
+from datetime import datetime
 
 def str_to_dtype(s: str) -> torch.dtype:
     if s == "float16":
@@ -61,7 +62,6 @@ def print_validation(
 
 def run_train_loop(
     project: str,
-    run: str,
     description: str,
     checkpoint_enabled: bool,
     checkpoint_dir: str,
@@ -90,7 +90,7 @@ def run_train_loop(
         wandb.init(
             entity="rolph-recto-personal",
             project=project,
-            id=run,
+            id=datetime.now().strftime("%Y%m%d-%H%M%S"),
             name=description,
             config=hyperparams
         )
@@ -262,7 +262,6 @@ def train(config: dict, args: argparse.Namespace):
 
     run_train_loop(
         config["project"],
-        config["run"],
         config["description"],
         config["checkpoint"]["enabled"],
         config["checkpoint"]["dir"],
