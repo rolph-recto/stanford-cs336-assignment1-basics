@@ -171,6 +171,7 @@ def run_train_loop(
     )
 
     # save final model
+    checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
     save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
 
     # Finish wandb run
@@ -252,6 +253,7 @@ def train(config: dict, args: argparse.Namespace):
         device=device,
         dtype=dtype
     )
+    model.compile()
 
     optimizer = AdamW(
         params = model.parameters(),
