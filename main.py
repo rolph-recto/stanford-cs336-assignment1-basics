@@ -62,7 +62,6 @@ def print_validation(
 
 def run_train_loop(
     project: str,
-    description: str,
     checkpoint_enabled: bool,
     checkpoint_dir: str,
     checkpoint_prefix: str,
@@ -86,12 +85,13 @@ def run_train_loop(
 
     # Initialize wandb
     if not offline:
+        now = datetime.now()
         wandb.login(key=os.getenv("WANDB_API_KEY"))
         wandb.init(
             entity="rolph-recto-personal",
             project=project,
-            id=datetime.now().strftime("%Y%m%d-%H%M%S"),
-            name=description,
+            id=now.strftime("%Y%m%d-%H%M%S"),
+            name=now.strftime("%B %d, %Y, %I:%M %p"),
             config=hyperparams
         )
 
