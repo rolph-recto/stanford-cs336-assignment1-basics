@@ -30,6 +30,7 @@
     },
     "train_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-train.pt",
     "val_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-valid.pt",
+    "val_prompt": "One day, ",
     "epochs": 80,
     "iterations_per_epoch": 500,
     "device": "cuda",

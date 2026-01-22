@@ -30,6 +30,7 @@
     },
     "train_dataset": "data/TinyStoriesV2-GPT4-train.pt",
     "val_dataset": "data/TinyStoriesV2-GPT4-valid.pt",
+    "val_prompt": "One day, ",
     "epochs": 80,
     "iterations_per_epoch": 500,
     "device": "cpu",

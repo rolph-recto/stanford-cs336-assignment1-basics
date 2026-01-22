@@ -29,6 +29,8 @@ def print_validation(
     iteration: int,
     val_dataset: torch.Tensor,
     val_batch_size: int,
+    val_prompt: str,
+    tokenizer: hf_tokenizers.Tokenizer,
     context_length: int,
     model: torch.nn.Module,
     device: torch.device,
@@ -39,7 +41,15 @@ def print_validation(
         val_outputs = model(val_inputs)
         val_loss = cross_entropy(val_outputs, val_targets)
 
+        val_decode = transformer_decode(
+            model=model,
+            tokenizer=tokenizer,
+            prompt=val_prompt,
+            context_length=context_length
+        )
+
         print(f"Iteration {iteration}, Val Loss: {val_loss.item()}")
+        print(f"Val Decode: {val_prompt}{val_decode}")
 
         if not offline:
             wandb.log({
@@ -56,7 +66,9 @@ def run_train_loop(
     checkpoint_prefix: str,
     train_dataset: torch.Tensor,
     val_dataset: torch.Tensor,
+    val_prompt: str,
     hyperparams: dict,
+    tokenizer: hf_tokenizers.Tokenizer,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     train_batch_size: int,
@@ -85,6 +97,8 @@ def run_train_loop(
         0,
         val_dataset=val_dataset,
         val_batch_size=val_batch_size,
+        val_prompt=val_prompt,
+        tokenizer=tokenizer,
         context_length=context_length,
         model=model,
         device=device,
@@ -123,6 +137,8 @@ def run_train_loop(
                     iteration,
                     val_dataset=val_dataset,
                     val_batch_size=val_batch_size,
+                    val_prompt=val_prompt,
+                    tokenizer=tokenizer,
                     context_length=context_length,
                     model=model,
                     device=device,
@@ -143,6 +159,8 @@ def run_train_loop(
         iteration,
         val_dataset=val_dataset,
         val_batch_size=val_batch_size,
+        val_prompt=val_prompt,
+        tokenizer=tokenizer,
         context_length=context_length,
         model=model,
         device=device,
@@ -214,6 +232,9 @@ def train(config: dict, args: argparse.Namespace):
     device = torch.device(config["device"])
     dtype = str_to_dtype(config["dtype"])
 
+    tokenizer_config = config["tokenizer"]
+    tokenizer: hf_tokenizers.Tokenizer = hf_tokenizers.Tokenizer.from_file(tokenizer_config["file"])
+
     model = Transformer(
         vocab_size=hyperparams["vocab_size"],
         context_length=hyperparams["context_length"],
@@ -243,7 +264,9 @@ def train(config: dict, args: argparse.Namespace):
         config["checkpoint"]["prefix"],
         train_dataset,
         val_dataset,
+        config["val_prompt"],
         hyperparams,
+        tokenizer,
         model,
         optimizer,
         hyperparams["train_batch_size"],
