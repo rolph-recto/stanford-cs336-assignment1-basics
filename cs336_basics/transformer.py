@@ -251,7 +251,8 @@ def scaled_dot_product_attention(
 
     if mask is not None:
         # is mask is false, that means we SHOULD fill with -inf
-        qk.masked_fill_(mask == False, -torch.inf) 
+        qk = torch.where(mask, qk, -torch.inf)
+        # qk.masked_fill_(mask == False, -torch.inf) 
 
     score: torch.Tensor = softmax(qk, -1)
     return einops.einsum(

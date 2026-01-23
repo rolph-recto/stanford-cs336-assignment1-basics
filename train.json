@@ -27,12 +27,12 @@
         "eps": 1e-8,
         "max_l2_norm": 1.0
     },
-    "train_dataset": "data/TinyStoriesV2-GPT4-train.pt",
-    "val_dataset": "data/TinyStoriesV2-GPT4-valid.pt",
+    "train_dataset": "data/TinyStoriesV2-GPT4-small-train.pt",
+    "val_dataset": "data/TinyStoriesV2-GPT4-small-valid.pt",
     "val_prompt": "One day, ",
     "epochs": 80,
     "iterations_per_epoch": 500,
     "device": "cpu",
     "dtype": "float32",
-    "offline": false
+    "offline": true
 }
