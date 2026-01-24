@@ -134,6 +134,7 @@ def run_train_loop(
                 })
 
             pbar.set_description(f"Iteration {iteration}, Train Loss: {loss.item()}")
+            pbar.update(1)
 
             if iteration % iterations_per_val == 0:
                 # compute validation loss
