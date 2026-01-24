@@ -1,6 +1,6 @@
 {
     "project": "cs336-assignment1",
-    "description": "initial-test",
+    "description": "sweep_lr1e-3_batch16",
     "checkpoint": {
         "enabled": false,
         "dir": "../drive/MyDrive/models/cs336-assignment1",
