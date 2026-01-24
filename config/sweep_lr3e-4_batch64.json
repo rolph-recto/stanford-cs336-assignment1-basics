@@ -4,14 +4,14 @@
     "checkpoint": {
         "enabled": false,
         "dir": "../drive/MyDrive/models/cs336-assignment1",
-        "prefix": ""
+        "prefix": "inital-test-{time}-"
     },
     "tokenizer": {
         "file": "tokenizer.json",
         "special_tokens": ["<|endoftext|>"]
     },
     "hyperparameters": {
-        "train_batch_size": 16,
+        "train_batch_size": 64,
         "val_batch_size": 32,
         "vocab_size": 10000,
         "context_length": 256,
@@ -30,8 +30,9 @@
     "train_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-train.pt",
     "val_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-valid.pt",
     "val_prompt": "One day, ",
-    "epochs": 80,
-    "iterations_per_epoch": 500,
+    "iterations": 20000,
+    "iterations_per_val": 250,
+    "compile": true,
     "device": "cuda",
     "dtype": "float32",
     "offline": false

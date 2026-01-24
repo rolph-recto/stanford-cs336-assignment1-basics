@@ -76,23 +76,25 @@ def run_train_loop(
     train_batch_size: int,
     val_batch_size: int,
     context_length: int,
-    epochs: int,
-    iterations_per_epoch: int,
+    iterations: int,
+    iterations_per_val: int,
     device: torch.device,
     offline: bool
 ):
     if checkpoint_enabled:
         assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
 
+    now = datetime.now().strftime("%Y%m%d-%H%M%S")
+    checkpoint_prefix = checkpoint_prefix.format(time=now)
+
     # Initialize wandb
     if not offline:
-        now = datetime.now().strftime("%Y%m%d-%H%M%S")
         wandb.login(key=os.getenv("WANDB_API_KEY"))
         wandb.init(
             entity="rolph-recto-personal",
             project=project,
-            id=now,
-            name=now,
+            id=f"{description}-{now}",
+            name=description,
             config=hyperparams
         )
 
@@ -110,12 +112,11 @@ def run_train_loop(
 
     model.train()
 
-    epoch: int = 0
-    iteration: int = 0
+    start_time = datetime.now()
 
     print("Beginning training loop")
-    with tqdm(total=iterations_per_epoch * epochs) as pbar:
-        while epoch < epochs:
+    with tqdm(total=iterations) as pbar:
+        for iteration in range(1, iterations):
             optimizer.zero_grad()
             inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
 
@@ -128,12 +129,13 @@ def run_train_loop(
             if not offline:
                 wandb.log({
                     "train_loss": loss.item(),
-                    "iteration": iteration+1
+                    "iteration": iteration+1,
+                    "seconds_elapsed": (datetime.now() - start_time).total_seconds()
                 })
 
-            pbar.set_description(f"Epoch {epoch+1}, Iteration {iteration+1}, Train Loss: {loss.item()}")
+            pbar.set_description(f"Iteration {iteration}, Train Loss: {loss.item()}")
 
-            if iteration % iterations_per_epoch == 0:
+            if iteration % iterations_per_val == 0:
                 # compute validation loss
                 print("\n")
                 print_validation(
@@ -151,12 +153,18 @@ def run_train_loop(
                 if checkpoint_enabled:
                     checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
                     save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
-                    print(f"Finished epoch {epoch+1}, saving checkpoint in {checkpoint_filepath}")
+                    print(f"Saving checkpoint for iteration {iteration} in {checkpoint_filepath}")
 
-                epoch += 1
+    print("FINAL:")
 
-            iteration += 1
-            pbar.update(1)
+    if not offline:
+        wandb.log({
+            "train_loss": loss.item(),
+            "iteration": iteration+1,
+            "seconds_elapsed": (datetime.now() - start_time).total_seconds()
+        })
+
+    pbar.set_description(f"Iteration {iteration}, Train Loss: {loss.item()}")
 
     print_validation(
         iteration,
@@ -171,7 +179,7 @@ def run_train_loop(
     )
 
     # save final model
-    checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}{iteration}.pt")
+    checkpoint_filepath = os.path.join(checkpoint_dir, f"{checkpoint_prefix}FINAL.pt")
     save_checkpoint(model, optimizer, iteration, checkpoint_filepath)
 
     # Finish wandb run
@@ -253,7 +261,9 @@ def train(config: dict, args: argparse.Namespace):
         device=device,
         dtype=dtype
     )
-    model.compile()
+
+    if config["compile"]:
+        model.compile()
 
     optimizer = AdamW(
         params = model.parameters(),
@@ -262,6 +272,13 @@ def train(config: dict, args: argparse.Namespace):
         betas=(hyperparams["beta1"], hyperparams["beta2"]),
         eps=hyperparams["eps"]
    )
+
+    print(f"{config['project']} ({config['description']})")
+    print(f"Train Batch size: {hyperparams['train_batch_size']}")
+    print(f"Val Batch Size: {hyperparams['val_batch_size']}")
+    print(f"Context Length: {hyperparams['context_length']}")
+    print(f"Iterations: {config['iterations']}")
+    print(f"Learning Rate: {hyperparams['lr']}")
 
     run_train_loop(
         config["project"],
@@ -279,8 +296,8 @@ def train(config: dict, args: argparse.Namespace):
         hyperparams["train_batch_size"],
         hyperparams["val_batch_size"],
         hyperparams["context_length"],
-        config["epochs"],
-        config["iterations_per_epoch"],
+        config["iterations"],
+        config["iterations_per_val"],
         device,
         config["offline"]
     )

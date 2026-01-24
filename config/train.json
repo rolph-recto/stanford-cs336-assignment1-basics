@@ -1,0 +1,39 @@
+{
+    "project": "cs336-assignment1",
+    "description": "initial-test",
+    "checkpoint": {
+        "enabled": false,
+        "dir": "checkpoints",
+        "prefix": "initial-test-{time}"
+    },
+    "tokenizer": {
+        "file": "tokenizer.json",
+        "special_tokens": ["<|endoftext|>"]
+    },
+    "hyperparameters": {
+        "train_batch_size": 16,
+        "val_batch_size": 32,
+        "vocab_size": 10000,
+        "context_length": 256,
+        "d_model": 512,
+        "num_layers": 4,
+        "num_heads": 16,
+        "d_ff": 1344,
+        "theta": 10000,
+        "lr": 3e-4,
+        "weight_decay": 0.01,
+        "beta1": 0.9,
+        "beta2": 0.999,
+        "eps": 1e-8,
+        "max_l2_norm": 1.0
+    },
+    "train_dataset": "data/TinyStoriesV2-GPT4-small-train.pt",
+    "val_dataset": "data/TinyStoriesV2-GPT4-small-valid.pt",
+    "val_prompt": "One day, ",
+    "iterations": 80000,
+    "iterations_per_val": 1000,
+    "compile": false,
+    "device": "cpu",
+    "dtype": "float32",
+    "offline": true
+}
