@@ -1,6 +1,6 @@
 {
     "project": "cs336-assignment1",
-    "description": "sweep_lr2e-3_batch256",
+    "description": "sweep_lr1e-3_batch256",
     "checkpoint": {
         "enabled": false,
         "dir": "../drive/MyDrive/models/cs336-assignment1",
@@ -20,7 +20,7 @@
         "num_heads": 16,
         "d_ff": 1344,
         "theta": 10000,
-        "lr": 5e-3,
+        "lr": 1e-3,
         "weight_decay": 0.01,
         "beta1": 0.9,
         "beta2": 0.999,
@@ -30,8 +30,8 @@
     "train_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-train.pt",
     "val_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-valid.pt",
     "val_prompt": "One day, ",
-    "iterations": 5000,
-    "iterations_per_val": 250,
+    "iterations": 10000,
+    "iterations_per_val": 1000,
     "compile": true,
     "device": "cuda",
     "dtype": "float32",
