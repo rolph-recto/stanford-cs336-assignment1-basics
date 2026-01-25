@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import json
 import tokenizers as hf_tokenizers 
 from tokenizers import \
+    decoders, \
     trainers as hf_trainers, models as hf_models, \
     pre_tokenizers as hf_pre_tokenizers
 from tqdm import tqdm
@@ -314,6 +315,7 @@ def decode(config: dict, args: argparse.Namespace):
 
     tokenizer_config = config["tokenizer"]
     tokenizer: hf_tokenizers.Tokenizer = hf_tokenizers.Tokenizer.from_file(tokenizer_config["file"])
+    tokenizer.decoder = decoders.BPEDecoder()
 
     # Load model from checkpoint
     checkpoint = torch.load(args.checkpoint)
