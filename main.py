@@ -1,4 +1,4 @@
-from cs336_basics.transformer import Transformer, AdamW, cross_entropy, gradient_clipping, torch_get_batch, save_checkpoint, decode as transformer_decode
+from cs336_basics.transformer import Transformer, AdamW, cross_entropy, gradient_clipping, lr_cosine_schedule, torch_get_batch, save_checkpoint, decode as transformer_decode
 from cs336_basics.bpe import Tokenizer, train_bpe
 from pydantic import BaseModel
 import argparse
@@ -77,6 +77,10 @@ def run_train_loop(
     train_batch_size: int,
     val_batch_size: int,
     context_length: int,
+    max_lr: float,
+    min_lr: float,
+    warmup_iters: int,
+    cosine_cycle_iters: int,
     iterations: int,
     iterations_per_val: int,
     device: torch.device,
@@ -118,6 +122,10 @@ def run_train_loop(
     print("Beginning training loop")
     with tqdm(total=iterations) as pbar:
         for iteration in range(1, iterations):
+            new_lr = lr_cosine_schedule(iteration, max_lr, min_lr, warmup_iters, cosine_cycle_iters)
+            for group in optimizer.param_groups:
+                group['lr'] = new_lr
+
             optimizer.zero_grad()
             inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
 
@@ -298,6 +306,10 @@ def train(config: dict, args: argparse.Namespace):
         hyperparams["train_batch_size"],
         hyperparams["val_batch_size"],
         hyperparams["context_length"],
+        hyperparams["lr"],
+        hyperparams["lr"] * 0.10,
+        int(config["iterations"] * 0.10),
+        int(config["iterations"] * 0.80),
         config["iterations"],
         config["iterations_per_val"],
         device,
