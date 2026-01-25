@@ -1,6 +1,6 @@
 {
     "project": "cs336-assignment1",
-    "description": "sweep_lr1e-3_batch256",
+    "description": "sweep_lr1e-3_batch256_dmodel384_dff1024_layers8_heads6",
     "checkpoint": {
         "enabled": false,
         "dir": "../drive/MyDrive/models/cs336-assignment1",
