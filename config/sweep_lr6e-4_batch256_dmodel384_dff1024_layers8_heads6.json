@@ -11,7 +11,7 @@
         "special_tokens": ["<|endoftext|>"]
     },
     "hyperparameters": {
-        "train_batch_size": 256,
+        "train_batch_size": 128,
         "val_batch_size": 32,
         "vocab_size": 10000,
         "context_length": 256,
@@ -20,7 +20,7 @@
         "num_heads": 6,
         "d_ff": 1024,
         "theta": 10000,
-        "lr": 6e-4,
+        "lr": 3e-4,
         "weight_decay": 0.01,
         "beta1": 0.9,
         "beta2": 0.999,
@@ -30,7 +30,7 @@
     "train_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-train.pt",
     "val_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-valid.pt",
     "val_prompt": "One day, ",
-    "iterations": 5000,
+    "iterations": 10000,
     "iterations_per_val": 1000,
     "compile": true,
     "device": "cuda",

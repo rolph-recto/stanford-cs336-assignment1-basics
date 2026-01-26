@@ -113,10 +113,10 @@ class SwiGLU(torch.nn.Module):
     ):
         super().__init__()
 
-        std: float = math.sqrt(2 / (d_model + d_model))
+        std: float = math.sqrt(2 / (d_model + d_ff))
         init: dict = {
             "mean": 0.0,
-            "std": math.sqrt(2 / (d_model + d_model)),
+            "std": math.sqrt(2 / (d_model + d_ff)),
             "a": -3.0 * std,
             "b": 3.0 * std
         }
@@ -362,11 +362,12 @@ class PreNormTransformerBlock(torch.nn.Module):
 
         self.prenorm_ffn = RMSNorm(d_model, device=device, dtype=dtype)
         self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+        self.device = device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         seq_length: int = x.size(-2)
         token_positions: torch.Tensor = \
-            torch.arange(seq_length).expand(x.shape[:-1])
+            torch.arange(seq_length, device=self.device).expand(x.shape[:-1])
 
         x = x + self.attention(self.prenorm_attn(x), token_positions)
         x = x + self.ffn(self.prenorm_ffn(x))

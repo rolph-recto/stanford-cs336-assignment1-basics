@@ -121,7 +121,7 @@ def run_train_loop(
 
     print("Beginning training loop")
     with tqdm(total=iterations) as pbar:
-        for iteration in range(1, iterations):
+        for iteration in range(1, iterations+1):
             new_lr = lr_cosine_schedule(iteration, max_lr, min_lr, warmup_iters, cosine_cycle_iters)
             for group in optimizer.param_groups:
                 group['lr'] = new_lr
@@ -309,7 +309,7 @@ def train(config: dict, args: argparse.Namespace):
         hyperparams["lr"],
         hyperparams["lr"] * 0.10,
         int(config["iterations"] * 0.10),
-        int(config["iterations"] * 0.80),
+        int(config["iterations"] * 0.90),
         config["iterations"],
         config["iterations_per_val"],
         device,
