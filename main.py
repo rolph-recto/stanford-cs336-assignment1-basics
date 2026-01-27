@@ -84,7 +84,8 @@ def run_train_loop(
     iterations: int,
     iterations_per_val: int,
     device: torch.device,
-    offline: bool
+    offline: bool,
+    mock: bool
 ):
     if checkpoint_enabled:
         assert os.path.isdir(checkpoint_dir), f"{checkpoint_dir} must be a directory"
@@ -120,6 +121,7 @@ def run_train_loop(
     start_time = datetime.now()
 
     print("Beginning training loop")
+    inputs, targets = None, None
     with tqdm(total=iterations) as pbar:
         for iteration in range(1, iterations+1):
             new_lr = lr_cosine_schedule(iteration, max_lr, min_lr, warmup_iters, cosine_cycle_iters)
@@ -127,10 +129,12 @@ def run_train_loop(
                 group['lr'] = new_lr
 
             optimizer.zero_grad()
-            inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
+
+            if not mock or (inputs is None and targets is None):
+                inputs, targets = torch_get_batch(train_dataset, train_batch_size, context_length, device)
 
             outputs = model(inputs)
-            loss = cross_entropy(outputs, targets)
+            loss = cross_entropy(outputs, targets) # type: ignore
             loss.backward()
             gradient_clipping(model.parameters(), hyperparams["max_l2_norm"])
             optimizer.step()
@@ -284,6 +288,10 @@ def train(config: dict, args: argparse.Namespace):
    )
 
     print(f"{config['project']} ({config['description']})")
+
+    params_count: int = sum([p.size().numel() for p in model.parameters()])
+    print(f"Parameter count: {params_count}")
+
     print(f"Train Batch size: {hyperparams['train_batch_size']}")
     print(f"Val Batch Size: {hyperparams['val_batch_size']}")
     print(f"Context Length: {hyperparams['context_length']}")
@@ -313,7 +321,8 @@ def train(config: dict, args: argparse.Namespace):
         config["iterations"],
         config["iterations_per_val"],
         device,
-        config["offline"]
+        config["offline"],
+        args.mock
     )
 
 def decode(config: dict, args: argparse.Namespace):
@@ -389,6 +398,7 @@ def main():
     # Train command
     train_parser = subparsers.add_parser("train", help="Train a model")
     train_parser.add_argument("config", help="JSON config file path")
+    train_parser.add_argument("-m", "--mock", action="store_true", help="Test")
 
     # Decode command
     decode_parser = subparsers.add_parser("decode", help="Generate text from a model")
