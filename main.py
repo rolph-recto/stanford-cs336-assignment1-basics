@@ -253,6 +253,9 @@ def tokenize_dataset(config: dict, args: argparse.Namespace):
         torch.save(torch.cat(tensors), args.output_file)
 
 def train(config: dict, args: argparse.Namespace):
+    # turn on some torch configs
+    torch.set_float32_matmul_precision("high")
+
     hyperparams = config["hyperparameters"]
 
     train_dataset = torch.load(config["train_dataset"])
