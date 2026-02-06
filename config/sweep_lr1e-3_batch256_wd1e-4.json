@@ -1,0 +1,39 @@
+{
+    "project": "cs336-assignment1",
+    "description": "sweep_lr1e-3_batch256",
+    "checkpoint": {
+        "enabled": false,
+        "dir": "../drive/MyDrive/models/cs336-assignment1",
+        "prefix": "inital-test-{time}-"
+    },
+    "tokenizer": {
+        "file": "tokenizer.json",
+        "special_tokens": ["<|endoftext|>"]
+    },
+    "hyperparameters": {
+        "train_batch_size": 256,
+        "val_batch_size": 32,
+        "vocab_size": 10000,
+        "context_length": 256,
+        "d_model": 512,
+        "num_layers": 4,
+        "num_heads": 16,
+        "d_ff": 1344,
+        "theta": 10000,
+        "lr": 1e-3,
+        "weight_decay": 0.0001,
+        "beta1": 0.9,
+        "beta2": 0.999,
+        "eps": 1e-8,
+        "max_l2_norm": 1.0
+    },
+    "train_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-train.pt",
+    "val_dataset": "../drive/MyDrive/datasets/TinyStoriesV2-GPT4-valid.pt",
+    "val_prompt": "One day, ",
+    "iterations": 10000,
+    "iterations_per_val": 1000,
+    "compile": true,
+    "device": "cuda",
+    "dtype": "float32",
+    "offline": false
+}
