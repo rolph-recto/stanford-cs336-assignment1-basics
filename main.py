@@ -140,9 +140,18 @@ def run_train_loop(
             optimizer.step()
 
             if not offline:
+                total_grad_norm = 0.0
+                for p in model.parameters():
+                    if p.grad is not None:
+                        param_norm = p.grad.data.norm(2) # L2 norm
+                        total_grad_norm += param_norm.item() ** 2
+
+                total_grad_norm = total_grad_norm ** 0.5
+
                 wandb.log({
                     "train_loss": loss.item(),
                     "iteration": iteration+1,
+                    "grad_norm": total_grad_norm,
                     "seconds_elapsed": (datetime.now() - start_time).total_seconds()
                 })
 
